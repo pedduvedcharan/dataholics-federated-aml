@@ -56,7 +56,7 @@ def _norm(s: str) -> str:
 
 # Sentences that turn "ranked for review" into a verdict are dropped (MASTER wording rule, Oct 17 16:26).
 VERDICT = re.compile(r"\b(likelihood|likely|probabl\w*|evidence|proves?|confirm\w*)\b[^.]*\blaundering\b|"
-                     r"\b(is|was|constitutes|consistent with|indicat\w*)\s+(a\s+)?(case\s+of\s+)?money laundering\b", re.I)
+                     r"\b(is|was|constitutes|consistent with|indicat\w*|suggest\w*)\b[^.]*\bmoney laundering\b", re.I)
 
 
 def parse_response(text: str) -> dict[str, str]:
