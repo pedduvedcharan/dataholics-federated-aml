@@ -51,17 +51,24 @@ bash scripts/setup_vm.sh                      # apt python3-* stack, venv, docke
 .venv/bin/python scripts/partition_data.py    # data/banks/bank_1..5/{train,test}.csv, data/global_test.csv
 docker compose build
 
-# federated training: coordinator + 4 banks + rogue + dashboard  (defaults: 10 rounds, DP on, defense on)
-docker compose up
-DP=off DEFENSE=off docker compose up          # the unprotected run, for comparison
+# federated training (defaults: 10 rounds, DP on, bank-side noise sigma 0.3, defense on, eval banks 2,3,4)
+TAG=dpon docker compose up --scale rogue=0                 # the headline run, banks 1-4
+TAG=dpoff DP=off docker compose up --scale rogue=0         # the unprotected comparison
+TAG=rogue_off DP=off DEFENSE=off docker compose up         # rogue bank 5 poisons, nobody stops it
+TAG=rogue_on  DP=off docker compose up                     # rogue bank 5 poisons, coordinator excludes it
+# every run writes state/global_final_<tag>.json and state/status_<tag>.json
+# one-shot demo pipeline (reset, dpoff, dpon, tryleak, attacker, alerts, template SAR, footprint):
+scripts/run_demo.sh --no-rogue
 
 # tools (run on demand)
 docker compose run --rm baselines             # per-bank model comparison -> state/baselines.json
-docker compose run --rm attacker              # red team table -> state/redteam.json
+docker compose run --rm attacker              # red team table (36 s) -> state/redteam.json
 docker compose run --rm tryleak               # try to send raw rows: blocked and logged
-docker compose run --rm llm /app/fetch_model.sh   # one-off: download + big-endian convert the LLM weights
 docker compose run --rm alerts                # top-20 flagged chains -> state/alerts.json
-ALERT_ID=A01 docker compose run --rm genai    # write state/sar/A01.md with the LLM (template fallback)
+ALERT_ID=A01 docker compose run --rm genai    # SAR with the template engine (always works)
+docker compose run --rm llm /app/fetch_model.sh   # one-off: download + big-endian convert the LLM weights
+docker compose up -d --wait llm && SAR_ENGINE=llm ALERT_ID=A01 docker compose run --rm genai && docker compose stop llm
+                                              # SAR written by the CPU LLM (llama.cpp, Qwen2.5 on s390x)
 
 # regulator dashboard, from your laptop
 ssh -L 8050:localhost:8050 dataholics         # then open http://localhost:8050
