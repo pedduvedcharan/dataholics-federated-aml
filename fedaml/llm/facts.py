@@ -90,9 +90,22 @@ def extract_facts(alert: dict, model: dict | None = None) -> dict[str, str]:
     }
 
 
+# Near-miss token names small models tend to produce -> canonical fact names.
+PLACEHOLDER_ALIASES: dict[str, str] = {
+    "AMOUNT": "AMT", "CURRENCY": "CUR", "TOTAL": "TOTAL_AMT", "TOTAL_AMOUNT": "TOTAL_AMT",
+    "SENDER_ACCOUNT": "SENDER", "RECEIVER_ACCOUNT": "RECEIVER", "SENDER_ID": "SENDER", "RECEIVER_ID": "RECEIVER",
+    "BANK_IDS": "BANKS", "BANK_LIST": "BANKS", "N_INSTITUTIONS": "N_BANKS", "N_TXNS": "N_ROWS",
+    "N_TRANSACTIONS": "N_ROWS", "TIMESTAMP": "TS", "DATE": "TS", "FORMAT": "FMT", "PAYMENT_FORMAT": "FMT",
+    "MODEL_SCORE": "SCORE", "ALERT": "ALERT_ID",
+}
+
+
 def fill_placeholders(text: str, facts: dict[str, str]) -> str:
-    """Replace ``[NAME]`` tokens with values; unknown tokens are left as-is for the post-check."""
-    return re.sub(r"\[([A-Z_]+)\]", lambda m: facts.get(m.group(1), m.group(0)), text)
+    """Replace ``[NAME]`` tokens (and known aliases) with values; unknown tokens stay for the post-check."""
+    def sub(m: re.Match) -> str:
+        key = PLACEHOLDER_ALIASES.get(m.group(1), m.group(1))
+        return facts.get(key, m.group(0))
+    return re.sub(r"\[([A-Z_]+)\]", sub, text)
 
 
 def indicator_lines(alert: dict) -> list[str]:

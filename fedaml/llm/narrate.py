@@ -24,39 +24,25 @@ SYSTEM_PROMPT = (
     "sentences. Output must be a single JSON object and nothing else."
 )
 
-PLACEHOLDER_HELP = (
-    "[SENDER] sender account, [RECEIVER] receiver account, [SENDER_BANK] sender's bank id, "
-    "[RECEIVER_BANK] receiver's bank id, [AMT] trigger amount, [CUR] currency, [FMT] payment format, "
-    "[TS] trigger timestamp, [N_SENDER_OTHER] number of other payments by the sender, "
-    "[N_DISTINCT_RECEIVERS] distinct receivers paid by the sender, [N_RECEIVER_ONWARD] onward payments "
-    "by the receiver, [N_ROWS] transactions in the chain, [TOTAL_AMT] total amount of the chain, "
-    "[N_BANKS] number of institutions, [BANKS] list of bank ids, [SCORE] model score, [RANK] rank"
-)
-
-
 def build_user_prompt(alert: dict) -> str:
-    """User turn: the case described with placeholders plus the qualitative indicators."""
+    """User turn: the case described with placeholders plus the qualitative indicators (kept short)."""
     lines = indicator_lines(alert)
     indicators = "\n".join(f"- {s}" for s in lines) or "- no dominant indicator"
     return (
-        "Case facts (use the tokens, not values):\n"
-        "- Trigger: account [SENDER] at bank [SENDER_BANK] paid [AMT] [CUR] by [FMT] to account [RECEIVER] "
-        "at bank [RECEIVER_BANK] on [TS].\n"
-        "- Sender made [N_SENDER_OTHER] other payments to [N_DISTINCT_RECEIVERS] distinct receivers in the "
-        "review sample; receiver made [N_RECEIVER_ONWARD] onward payments.\n"
-        "- Chain reviewed: [N_ROWS] transactions, total [TOTAL_AMT], across [N_BANKS] institutions (bank ids [BANKS]).\n"
-        "- The jointly trained cross-bank model scored the trigger [SCORE] (rank [RANK] of the sample).\n"
-        f"Model indicators, strongest first:\n{indicators}\n\n"
-        f"Token meanings: {PLACEHOLDER_HELP}.\n\n"
-        "Return JSON with exactly these keys:\n"
-        '{"summary": "Account [SENDER] at bank [SENDER_BANK] ... <at most 70 words, 3 sentences: what was paid to '
-        "[RECEIVER] at bank [RECEIVER_BANK], what the sender and receiver did around it ([N_SENDER_OTHER], "
-        "[N_DISTINCT_RECEIVERS], [N_RECEIVER_ONWARD]), and the chain size ([N_ROWS] transactions, [TOTAL_AMT], "
-        '[N_BANKS] institutions)>",\n'
-        ' "pattern_indicators": ["<one sentence of at most 15 words per indicator above, in your own words>", ...],\n'
-        ' "recommended_action": "<at most 50 words: concrete next steps for the compliance officer at bank '
-        '[SENDER_BANK] about account [SENDER] and the other institutions [BANKS]>"}\n'
-        "Keep the whole answer under 250 words."
+        "Case (tokens stand for values; use them verbatim):\n"
+        "- Account [SENDER] at bank [SENDER_BANK] paid [AMT] [CUR] by [FMT] to account [RECEIVER] at bank "
+        "[RECEIVER_BANK] on [TS].\n"
+        "- The sender made [N_SENDER_OTHER] other payments to [N_DISTINCT_RECEIVERS] receivers; the receiver made "
+        "[N_RECEIVER_ONWARD] onward payments.\n"
+        "- Chain: [N_ROWS] transactions, total [TOTAL_AMT], [N_BANKS] institutions (bank ids [BANKS]).\n"
+        "- Cross-bank model score [SCORE], rank [RANK] in the sample.\n"
+        f"Indicators, strongest first:\n{indicators}\n\n"
+        "Return JSON only:\n"
+        '{"summary": "Account [SENDER] at bank [SENDER_BANK] ... (3 sentences, under 70 words, mention [RECEIVER], '
+        'the sender/receiver activity and the chain size)",\n'
+        ' "pattern_indicators": ["one sentence under 15 words per indicator, in your own words", ...],\n'
+        ' "recommended_action": "under 50 words: next steps for the officer at bank [SENDER_BANK] about account '
+        '[SENDER] and the institutions [BANKS]"}'
     )
 
 
