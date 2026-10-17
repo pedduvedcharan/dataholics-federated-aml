@@ -59,11 +59,22 @@ def parse_response(text: str) -> dict[str, str]:
     body = (m.group(1) if m else text).strip()
     body = re.split(r"\n\s*\n|\n\s*(?:Example|ASSESSMENT)\b", body, flags=re.I)[0].strip()
     body = _dedupe_sentences(" ".join(body.split()))
+    body = _drop_copied(body, EXAMPLE.replace("ASSESSMENT:", ""))
     if not body:
-        raise ValueError("empty LLM assessment")
-    if _norm(body)[:100] == _norm(EXAMPLE.replace("ASSESSMENT:", ""))[:100]:
-        raise ValueError("LLM copied the example verbatim")
+        raise ValueError("empty LLM assessment (after removing sentences copied from the example)")
     return {"assessment": body}
+
+
+def _drop_copied(text: str, source: str) -> str:
+    """Remove sentences the model lifted (nearly) verbatim from ``source`` (the one-shot example)."""
+    src = [_norm(x) for x in re.split(r"(?<=[.!?])\s+", source) if x.strip()]
+    kept = []
+    for sent in re.split(r"(?<=[.!?])\s+", text):
+        n = _norm(sent)
+        if n and any(n == x or (len(n) > 30 and (n in x or x in n)) for x in src):
+            continue
+        kept.append(sent)
+    return " ".join(kept).strip()
 
 
 def _dedupe_sentences(text: str) -> str:
