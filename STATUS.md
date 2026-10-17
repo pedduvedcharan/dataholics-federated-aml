@@ -58,6 +58,7 @@ SSH alias `dataholics` added to `~/.ssh/config` on the lead's Mac; key `~/Downlo
 - Tools profile (`docker compose run --rm <svc>`): `attacker`, `genai`, `baselines`, `tryleak`.
 
 ## Decisions log
+- Oct 17 12:50 (AUDIT): egress.send checks forbidden keys at any depth (stricter than the one-level minimum), caps lists at len(FEATURE_NAMES)+1 (falls back to 20 features from CONTRACTS §3 until features.py lands), 64 KB body, rejects NaN/non-JSON (banks must `.tolist()`). Audit log dir defaults to `logs/egress`, override with env `FEDAML_EGRESS_LOGS` or `logs_dir=`.
 - Oct 17 12:45: MASTER drafted `docker-compose.yml` (default profile: coordinator, bank1-4, rogue, dashboard; profile `tools`: attacker, genai, baselines, tryleak) and `submission/DEMO_SCRIPT.md` with `{{PLACEHOLDER}}` numbers, each tied to a file in `state/` or `logs/`.
 - Oct 17 12:45: Containers bind 0.0.0.0 internally; only the host publishes on 127.0.0.1 (see Integration notes). Not a CONTRACTS change; clarification.
 - Oct 17 12:00: idea locked (cross-bank AML, federated). Additions accepted: regulator view (#2), rogue bank (#4). Paillier and ML-DSA are stretch.
