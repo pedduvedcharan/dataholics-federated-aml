@@ -57,7 +57,7 @@ Scenes 5 and 6 use models and files produced earlier on the VM; say "produced on
 
 ## Claims discipline (say these words, not others)
 **On the red team:** "near chance" for σ 0.5 (AUC 0.517); "weak leak" for σ 0.3 (0.551); "coin flip" only for σ 0.8; say "AUC", never "detection rate". REDTEAM's 81-word scene-5 script is in `docs/REDTEAM.md`.
-**On results (MODELS, final table fcff366):** "matches the best single bank on AUC" and "beats centralized pooling on both metrics" are true for the DP-off model (0.992 / 0.248); the DP-on live run is 0.982 / 0.065, just below centralized pooling, so say "the noise costs about 0.01 AUC and 0.18 AP"; federated trails the best single-bank tree on AP (0.405); "lifts banks whose own models are weak" holds; call the pooled-raw-data row "centralized pooling", never "ceiling" (bank 1's unlearnable rows are 70 % of its training data).
+**On results (MODELS, final table fcff366):** "matches the best single bank on AUC" (0.992 vs 0.986, slightly above) and "beats centralized pooling on both metrics" are true for the DP-off model (0.992 / 0.248; honest bank 1 sidelined 3/10 rounds, disclosed); the DP-on live run is 0.982 / 0.065, which ties centralized pooling on AUC and trails it on AP, so say "the noise costs about 0.01 AUC and 0.18 AP"; never say "drops to chance" for the rogue (it is 0.953 at μ 0.1); federated trails the best single-bank tree on AP (0.405); "lifts banks whose own models are weak" holds; call the pooled-raw-data row "centralized pooling", never "ceiling" (bank 1's unlearnable rows are 70 % of its training data).
 "sandboxed containers" (not Secure Execution) · "synthetic data, synthetic attacks" · "measured on this VM" · "ε is approximate".
 
 ## Rehearsal log
