@@ -119,7 +119,7 @@ services:
       --model-off ${MODEL_OFF:-state/global_final_dpoff.json}
       --model-on  ${MODEL_ON:-state/global_final_dpon.json}
       --seed ${SEED:-42}
-    # TODO(REDTEAM): confirm --seed is accepted or remove.
+    # REDTEAM 12:50: flags confirmed (--model-off --model-on --seed; also --attack auto|loss_threshold|shadow|art, --n 20000).
 
   genai:
     <<: *common
@@ -127,8 +127,19 @@ services:
     profiles: ["tools"]
     # SAR writer. Usage: ALERT_ID=<id> docker compose run --rm genai   (SAR_ENGINE=llm|template, default template)
     command: python3 -m fedaml.sar --alert-id ${ALERT_ID:?set ALERT_ID=<alert id from state/alerts.json>} --engine ${SAR_ENGINE:-template}
-    # TODO(GENAI): if the LLM runtime works on s390x, add the weights volume here (e.g. ./models:/app/models:ro),
-    #              set SAR_ENGINE default to llm, and give MASTER the model name + RAM so it is not run during training.
+    # GENAI 12:50 scaffold (fedaml/llm): talks to a llama.cpp `llama-server` over HTTP; never imports torch.
+    # The server runs on the VM host (built from source, big-endian GGUF), so the container reaches it via host-gateway.
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      SEED: ${SEED:-42}
+      LLM_URL: ${LLM_URL:-http://host.docker.internal:8080}
+      LLM_MODEL_PATH: ${LLM_MODEL_PATH:-}
+      LLM_THREADS: ${LLM_THREADS:-3}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # TODO(GENAI): confirm llama-server runs on the host (not in this container) and its port; give MASTER model name,
+    #              RAM, and seconds per SAR. If weights must be inside the container, add ./models:/app/models:ro here.
 
   baselines:
     <<: *common
@@ -136,7 +147,7 @@ services:
     profiles: ["tools"]
     # Per-bank LogReg / RF / HGB comparison + centralized ceiling -> state/baselines.json (MODELS)
     command: python3 -m fedaml.baselines --banks ${BANKS_BASELINE:-1,2,3,4} --seed ${SEED:-42}
-    # TODO(MODELS): confirm --seed is accepted or remove.
+    # MODELS 12:50: flags confirmed (--banks --seed --max-rows 500000 --n-jobs 2 --federated-model <json>).
 
   tryleak:
     <<: *common
@@ -149,4 +160,4 @@ services:
       - ./state:/app/state
       - ./logs:/app/logs
       - ./scripts:/app/scripts:ro
-    # TODO(AUDIT): confirm try_leak.py flags.
+    # AUDIT 12:50: flags confirmed (--bank-id --coordinator --variant rows|nested|oversize --logs-dir).

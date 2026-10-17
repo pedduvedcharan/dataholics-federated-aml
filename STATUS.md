@@ -1,19 +1,20 @@
 # STATUS board — update when you start, finish, or block. Newest entry at top of each section.
 
 ## Timeline check (MASTER updates hourly)
+- 12:50 CDT Sat (13:00 window): **mostly green except data.** True: VM ready (`setup_vm.sh` ran: venv, apt python3-sklearn 1.4.1/pandas 2.1.4/flask 3.0.2, docker-compose-v2 2.40.3, image `fedaml:latest` built 926 MB); `features.py` + `baselines.py` + `docs/FEATURES.md` pushed; `egress.py` + tests + `try_leak.py` pushed; `redteam.py` (419 lines) and `fedaml/llm/` scaffolds in tree; compose + demo script drafted. NOT true: **Kaggle CSV not on VM, so no partition, no `sample_50k.csv`.** FEDERATION has no code in the tree yet (coordinator+bank MVP is the 15:00 window's critical path; start on `make_synthetic` rows now). VM repo at 9f172a8, needs `git pull`.
 - 12:45 CDT Sat: **Window 12:00–13:00 at risk.** True: repo public (verified `gh repo view` → PUBLIC), VM reachable, repo cloned at `~/fedaml` on VM, base build tools installed (`~/setup.log` ends INSTALL_DONE), `docker-compose.yml` drafted, `submission/DEMO_SCRIPT.md` drafted. Not yet true: data on VM, partition, `features.py`, venv, python3-* apt packages, `docker compose` plugin, Dockerfile, any agent scaffold. Kaggle CSV owner not yet confirmed → single biggest risk for the 13:00 and 15:00 windows.
 - 12:00 CDT Sat: project locked, briefs written. Nothing built yet.
 
 ## Agent status
 | Agent | State | Last update | Next deliverable |
 |---|---|---|---|
-| MASTER | active | 12:55 | hourly loop; collect exact container commands from FEDERATION/AUDIT/GENAI; `docker compose up` on VM by 17:30 |
-| INFRA | in progress | 12:42 (commit 9f172a8: setup_vm.sh, Dockerfile) | run `setup_vm.sh` on VM; `docker build -t fedaml .` (record time); land CSV; `partition_data.py` |
+| MASTER | active | 12:50 | hourly loop; collect exact container commands from FEDERATION/AUDIT/GENAI; `docker compose up` on VM by 17:30 |
+| INFRA | in progress | 12:50 (seen by MASTER: setup_vm.sh done on VM, image built) | **name the Kaggle downloader; land CSV**; `partition_data.py`; `sample_50k.csv` to repo; record build time + pip results in STATUS |
 | MODELS | features.py, baselines.py, docs/FEATURES.md pushed (c452cfa); tested on synthetic 4-bank partition; blocked on data + VM venv | 12:58 | run `python -m fedaml.baselines --banks 1,2,3,4` on VM, paste table; then alerts.json with GENAI |
-| FEDERATION | not started | | coordinator + bank MVP against stubs |
-| REDTEAM | not started | | loss-threshold attack scaffold |
-| AUDIT | not started | | `egress.py` + `tests/test_egress.py` (FEDERATION blocks on it) |
-| GENAI | not started | | LLM runtime verdict on s390x (20-min caps) |
+| FEDERATION | not started (no code in tree at 12:50) | | coordinator + bank MVP on `features.make_synthetic()` rows; use real `egress.send` (shipped) |
+| REDTEAM | in progress (redteam.py 419 lines, uncommitted) | 12:50 (seen by MASTER) | commit; `--selftest` on synthetic logreg; wait for dp-off/dp-on models |
+| AUDIT | egress.py + tests + try_leak.py pushed (80179a8) | 12:50 | `summarize(logs_dir)`; dashboard v1 (bind 0.0.0.0, port 8050, `/api/state`) |
+| GENAI | in progress (fedaml/llm scaffold → llama.cpp HTTP client) | 12:50 (seen by MASTER) | runtime verdict in STATUS (tokens/s or 'template'); `sar.py --engine template` first |
 
 ## VM facts (INFRA, measured 12:40 CDT Sat via `ssh dataholics`; MASTER re-verified 12:40: `docker ps` empty, no venv, no data/, python3-sklearn/pandas/flask not yet installed)
 ```
@@ -31,7 +32,7 @@ SSH alias `dataholics` added to `~/.ssh/config` on the lead's Mac; key `~/Downlo
 
 ## Blockers
 - [12:45] **Kaggle `HI-Small_Trans.csv` not on the VM.** Needs: a teammate with a Kaggle login downloads it and runs `scp HI-Small_Trans.csv dataholics:~/fedaml/data/raw/`. Owner: P2 to name the downloader. Everything downstream waits on this.
-- [12:45] `docker compose` plugin missing on the VM. Owner: INFRA (`sudo apt-get install -y docker-compose-v2`). Blocks MASTER's 17:30 integration.
+- ~~[12:45] `docker compose` plugin missing~~ → RESOLVED 12:50: Docker Compose 2.40.3 installed by `setup_vm.sh`.
 
 ## Contract changes (proposed → MASTER accepts/rejects)
 - (none)
@@ -47,6 +48,7 @@ SSH alias `dataholics` added to `~/.ssh/config` on the lead's Mac; key `~/Downlo
 - Tools profile (`docker compose run --rm <svc>`): `attacker`, `genai`, `baselines`, `tryleak`.
 
 ## Decisions log
+- Oct 17 12:50 (MASTER): compose TODOs closed for baselines/attacker/tryleak (flags verified in code). `genai` service gets `LLM_URL` (default `http://host.docker.internal:8080`) + `extra_hosts: host-gateway`, assuming llama-server runs on the VM host; GENAI to confirm.
 - Oct 17 12:50 (MODELS): `fedaml.features` shipped. 20 features, order per CONTRACTS §3, one-hot names `fmt_ACH, fmt_Credit_Card, fmt_Cheque, fmt_Wire, fmt_Reinvestment, fmt_Bitcoin, fmt_Cash`. `feature_names_sha256()` = `4e58a8f815af595585d72f5852a886a60ba572ac2e09aecbcf6ef6f550792dcb`. `featurize()` accepts raw Kaggle headers or canonical names. `make_synthetic(n)` gives everyone test rows until data lands. `fedaml.baselines.evaluate_model_json(path)` / `predict_proba_json(model, X)` are the shared evaluator; `state/baselines.json` per_bank entries carry `auc, ap` (bank's own test) plus `global_auc, global_ap` (global_test.csv), extra keys only.
 - Oct 17 12:50 (AUDIT): egress.send checks forbidden keys at any depth (stricter than the one-level minimum), caps lists at len(FEATURE_NAMES)+1 (falls back to 20 features from CONTRACTS §3 until features.py lands), 64 KB body, rejects NaN/non-JSON (banks must `.tolist()`). Audit log dir defaults to `logs/egress`, override with env `FEDAML_EGRESS_LOGS` or `logs_dir=`.
 - Oct 17 12:45: MASTER drafted `docker-compose.yml` (default profile: coordinator, bank1-4, rogue, dashboard; profile `tools`: attacker, genai, baselines, tryleak) and `submission/DEMO_SCRIPT.md` with `{{PLACEHOLDER}}` numbers, each tied to a file in `state/` or `logs/`.
