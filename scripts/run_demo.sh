@@ -48,7 +48,17 @@ for port in ${DEMO_PORTS:-8000 8050}; do   # host ports compose publishes
 done
 
 # ---------------------------------------------------------------- reset + footprint
-if [ "$DO_RESET" = 1 ]; then scripts/reset_run.sh --down; fi
+if [ "$DO_RESET" = 1 ]; then
+  scripts/reset_run.sh --down
+  # Carry over outputs this run does NOT regenerate (rogue scene from FEDERATION's DP-off runs, MODELS baselines,
+  # GENAI LLM benchmarks), from the newest archive that has each file. Override with RESTORE_GLOBS.
+  RESTORE_GLOBS="${RESTORE_GLOBS:-status_rogue_*.json global_final_rogue_*.json baselines.json llm_*.json}"
+  for g in $RESTORE_GLOBS; do
+    for f in $(ls -1t archive/*/state/$g 2>/dev/null); do
+      b=$(basename "$f"); [ -e "state/$b" ] || { cp -p "$f" "state/$b" && echo "  restored state/$b <- $f"; }
+    done
+  done
+fi
 mkdir -p state logs/egress submission/screenshots
 scripts/footprint.sh start
 T_START=$(date +%s)
@@ -92,7 +102,7 @@ PY
 # ---------------------------------------------------------------- training runs
 [ "$DO_OFF" = 1 ] && run_phase dpoff off
 run_phase dpon on
-[ "$DO_ROGUE" = 1 ] && [ ! -f state/status_rogue_on.json ] && cp state/status.json state/status_rogue_on.json   # defense on: rogue exclusions visible to the dashboard
+[ "$DO_ROGUE" = 1 ] && cp state/status.json state/status_rogue_on.json   # defense on: rogue exclusions visible to the dashboard
 
 # screenshots (text) while the training containers still exist
 { echo "\$ docker ps"; docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"; echo;
