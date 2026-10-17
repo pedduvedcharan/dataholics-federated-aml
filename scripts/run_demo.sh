@@ -18,6 +18,7 @@
 set -uo pipefail
 cd "${FEDAML_ROOT:-$(dirname "$0")/..}"
 DC="docker compose ${COMPOSE_EXTRA:-}"
+export SAR_ENGINE="${SAR_ENGINE:-template}"   # compose defaults genai to llm; the integration run uses template (MASTER)
 WAIT_MAX="${WAIT_MAX:-1800}"
 DO_OFF=1; DO_RESET=1; DO_TOOLS=1; DO_ROGUE=1
 for a in "$@"; do
