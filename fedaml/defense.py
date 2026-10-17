@@ -22,6 +22,14 @@ laundering has to push the model AGAINST the consensus, so the test excludes
 updates that oppose it (similarity below -0.5), not updates that merely
 disagree. tau 0.5 or 0.8 excluded honest bank 1 every round.
 
+Round-cumulative score (MASTER option a, 16:00): the test uses the mean of a
+bank's cosine distances over all rounds so far. Single-round, bank 1 touched
+1.51 in a 4-bank run (excluded 4/10); its running mean peaks at 1.40, while
+the scaled rogue's running mean never drops below 1.73 (offline replay of the
+persisted real updates). Known limits, disclosed: a label-flipping rogue
+(running mean <= 1.36) passes; with bank-side DP noise (local mode, sigma 0.3)
+per-round directions are noise and the screen is blind (rogue caught 1/10).
+
 Every exclusion is recorded as ``{"bank_id", "reason", "score"}`` and the
 scores of all banks are returned for the regulator dashboard.
 """
@@ -49,8 +57,14 @@ def screen_updates(
     tau: float = 0.5,
     norm_ratio: float = 3.0,
     noise_std: float = 0.0,
+    history: dict[int, list[float]] | None = None,
 ) -> tuple[list[int], list[dict], dict[int, dict]]:
-    """Return (accepted_ids, excluded [{bank_id, reason, score}], scores per bank)."""
+    """Return (accepted_ids, excluded [{bank_id, reason, score}], scores per bank).
+
+    ``history`` (owned by the coordinator, mutated here) holds each bank's per-round
+    cosine distances from earlier rounds; the direction test uses the MEAN over all
+    rounds so far including this one (round-cumulative score), not the single round.
+    """
     excluded: list[dict] = []
     scores: dict[int, dict] = {}
     if not deltas:
@@ -79,11 +93,16 @@ def screen_updates(
     accepted: list[int] = []
     for bid, vec in survivors.items():
         cos = cosine_distance(vec, median)
+        hist = history.setdefault(bid, []) if history is not None else []
+        hist.append(cos)
+        cum = float(np.mean(hist))
         norm = scores[bid]["norm"]
-        scores[bid].update({"cosine_to_median": round(cos, 6), "norm_ratio": round(norm / median_norm, 6) if median_norm > 0 else None})
-        if cos > tau:
-            excluded.append({"bank_id": bid, "reason": "cosine_distance_to_median", "score": round(cos, 6)})
-            log.warning("bank %s excluded: cosine distance %.3f > tau %.2f", bid, cos, tau)
+        scores[bid].update({"cosine_to_median": round(cos, 6), "cosine_cumulative": round(cum, 6), "rounds_scored": len(hist),
+                            "norm_ratio": round(norm / median_norm, 6) if median_norm > 0 else None})
+        if cum > tau:
+            excluded.append({"bank_id": bid, "reason": "cumulative_cosine_distance_to_median", "score": round(cum, 6)})
+            log.warning("bank %s excluded: mean cosine distance over %d rounds %.3f > tau %.2f (this round %.3f)",
+                        bid, len(hist), cum, tau, cos)
         elif median_norm > 0 and norm > norm_ratio * median_norm:
             excluded.append({"bank_id": bid, "reason": "norm_ratio_to_median", "score": round(norm / median_norm, 6)})
             log.warning("bank %s excluded: norm %.3f > %.1fx median %.3f", bid, norm, norm_ratio, median_norm)

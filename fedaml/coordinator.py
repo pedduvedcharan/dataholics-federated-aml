@@ -125,6 +125,7 @@ class Coordinator:
         self.started = time.time()
         self.round_times: list[float] = []
         self.rng = np.random.default_rng(args.seed)
+        self.cos_history: dict[int, list[float]] = {}
         self.tests: dict = {}
         self.evaluate = None
         self._load_evaluator()
@@ -252,7 +253,8 @@ class Coordinator:
         missing = [b for b in self.banks if b not in updates]
         noise_std = a.sigma * a.clip if (self.dp_on and a.dp_mode == "local") else 0.0
         accepted, excluded, scores = defense.screen_updates(deltas, a.clip, enabled=self.defense_on, tau=a.tau,
-                                                            norm_ratio=a.norm_ratio, noise_std=noise_std)
+                                                            norm_ratio=a.norm_ratio, noise_std=noise_std,
+                                                            history=self.cos_history)
         for b in missing:
             excluded.append({"bank_id": b, "reason": "no_update_before_timeout", "score": None})
         weights: dict[int, float] = {}
