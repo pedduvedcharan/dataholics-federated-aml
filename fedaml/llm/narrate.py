@@ -25,14 +25,25 @@ SYSTEM_PROMPT = (
 
 EXAMPLE = (
     "ASSESSMENT: The transfer was a round amount sent by wire to a receiver that collects payments from many "
-    "unrelated payers, which is typical of a collection or mule account. The sender rarely transacts, so a single "
-    "large outgoing payment is out of character. Because the counterparties sit at different banks, no single "
+    "unrelated payers, which is typical of a collection or mule account. A single large outgoing payment that "
+    "stands out from the sender's usual amounts is out of character. Because the counterparties sit at different banks, no single "
     "institution would see the full pattern on its own. The activity is consistent with layering and merits review."
 )
 
 
+# Facts the LLM may see as plain values: counts and categories only, never ids, amounts, dates or bank codes.
+PROMPT_SAFE_FACTS = ("FMT", "CUR", "SENDER_ACTIVITY", "RECEIVER_ACTIVITY", "N_BANKS", "N_ROWS")
+
+
 def build_user_prompt(alert: dict) -> str:
-    """User turn: qualitative facts and model reasons only (no ids, no amounts), one example answer."""
+    """User turn: counts, categories and model reasons (no ids, amounts, dates or bank codes), one example."""
+    from fedaml.llm.facts import extract_facts, fill_placeholders
+
+    facts = extract_facts(alert)
+    return fill_placeholders(_prompt_template(alert), {k: facts[k] for k in PROMPT_SAFE_FACTS})
+
+
+def _prompt_template(alert: dict) -> str:
     lines = indicator_lines(alert)
     indicators = "\n".join(f"- {s}" for s in lines) or "- no dominant indicator"
     return (
@@ -41,11 +52,12 @@ def build_user_prompt(alert: dict) -> str:
         "Facts:\n"
         "- Payment format: [FMT]. Currency: [CUR].\n"
         "- The sender [SENDER_ACTIVITY]. The receiver [RECEIVER_ACTIVITY].\n"
-        "- The linked chain spans [N_BANKS] institutions.\n"
+        "- The linked chain has [N_ROWS] transactions and spans [N_BANKS] institutions.\n"
         f"Why the model flagged it, strongest reason first:\n{indicators}\n\n"
         "Write one paragraph for a compliance officer explaining, in your own words, why this pattern is suspicious "
         "and what typology it may fit. Use three or four sentences. Do not mention account numbers, bank ids, "
-        "amounts or dates. Start with ASSESSMENT:\n\n"
+        "amounts or dates, and do not describe how often anyone transacts: the report states the counts. "
+        "Start with ASSESSMENT:\n\n"
         f"Example for a different case:\n{EXAMPLE}"
     )
 
@@ -59,6 +71,11 @@ VERDICT = re.compile(r"\b(likelihood|likely|probabl\w*|evidence|proves?|confirm\
                      r"\b(is|was|constitutes|consistent with|indicat\w*|suggest\w*)\b[^.]*\bmoney laundering\b", re.I)
 
 
+# Frequency claims are dropped: the code-written summary states the actual counts (MASTER, Oct 17 16:30).
+FREQUENCY = re.compile(r"\b(rarely|seldom|frequent\w*|infrequent\w*|often|never|usually|regularly|"
+                       r"occasional\w*|many (other )?(transactions|payments)|few (other )?(transactions|payments))\b", re.I)
+
+
 def parse_response(text: str) -> dict[str, str]:
     """Extract the ``ASSESSMENT:`` paragraph (label optional). Raises ValueError on unusable output."""
     m = re.search(r"ASSESSMENT\s*:\s*(.+)", text, flags=re.S | re.I)
@@ -66,7 +83,8 @@ def parse_response(text: str) -> dict[str, str]:
     body = re.split(r"\n\s*\n|\n\s*(?:Example|ASSESSMENT)\b", body, flags=re.I)[0].strip()
     body = _dedupe_sentences(" ".join(body.split()))
     body = _drop_copied(body, EXAMPLE.replace("ASSESSMENT:", ""))
-    body = " ".join(x for x in re.split(r"(?<=[.!?])\s+", body) if not VERDICT.search(x)).strip()
+    body = " ".join(x for x in re.split(r"(?<=[.!?])\s+", body)
+                    if not VERDICT.search(x) and not FREQUENCY.search(x)).strip()
     if not body:
         raise ValueError("empty LLM assessment (after removing sentences copied from the example)")
     return {"assessment": body}
