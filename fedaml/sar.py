@@ -45,6 +45,9 @@ def find_alert(alerts: list[dict], alert_id: str) -> dict:
 def check_account_ids(text: str, alert: dict) -> list[str]:
     """Return account-like tokens in ``text`` that do not belong to the alert (empty = pass)."""
     allowed = {str(a).lower() for a in alert.get("accounts", [])}
+    allowed |= {str(b).lower() for b in alert.get("banks_involved", [])}
+    for r in alert.get("rows", []):  # bank codes in real data are long digit strings ("0118180")
+        allowed |= {str(r.get(k)).lower() for k in ("from_bank", "to_bank", "from_acct", "to_acct")}
     allowed |= {str(alert.get("model_sha256") or "").lower()}
     bad = []
     for tok in ACCOUNT_LIKE.findall(text):
