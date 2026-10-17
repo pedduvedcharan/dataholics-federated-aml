@@ -104,7 +104,7 @@ From `state/sar/_runs.jsonl`. "Wall" includes the `docker compose run` container
 
 | Alert | Trigger labelled laundering? | LLM seconds | Wall seconds | Completion tokens | Assessment words |
 |---|---|---|---|---|---|
-| A06 (demo) | yes | 29.5 | 30.4 | 80 | 50 |
+| A06 (demo, regenerated 16:35 after the fact-check fixes) | yes | 34.9 | 35.8 | 120 | 49 |
 | A07 | no | 30.7 | 31.6 | 160 | 72 |
 | A08 | no | 20.7 | 21.6 | 144 | 94 |
 
@@ -150,7 +150,11 @@ docker compose stop llm
   facts it might contradict sit directly above it, written by code. It never changes a score, an id or a number.
 - The review queue is noisy: 2 of the top 20 triggers are labelled laundering, consistent with the DP-on
   model's AP of about 0.065. Some chains are a single row because `global_test.csv` is a 200k sample.
-- The verdict filter drops LLM sentences that call an alert laundering. Even so, the paragraph can misstate
-  activity. In A06 it says the sender "rarely transacts" while the chain shows two other payments.
+- Fact-check fixes after the first A06 draft. That draft said the sender "rarely transacts" (the chain shows
+  two other payments), that ACH is "less common" and that the sender paid "many" accounts (it paid 3). Now the
+  prompt carries the decoded counts, and the indicators state numbers instead of "many". Code drops LLM
+  sentences with frequency, prevalence or size-of-count words (rarely, often, less common, many distinct, ...).
+  The regenerated A06 paragraph was checked sentence by sentence against the code-written facts.
+- The paragraph can still be vague ("raise significant concerns"). A07 and A08 were generated before these fixes.
 - Data are synthetic (IBM AML HI-Small). The outline follows a SAR narrative but is not a legal filing.
 - Speed numbers are single runs on one shared VM.
