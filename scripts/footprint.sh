@@ -5,7 +5,7 @@
 #   scripts/footprint.sh report   (re)write state/footprint.json from the existing log
 # Round timing comes from the mtimes of state/global_round_<r>.json (coordinator writes one per round).
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "${FEDAML_ROOT:-$(dirname "$0")/..}"   # FEDAML_ROOT overrides the project dir (used by smoke tests)
 LOG=logs/footprint.log
 PIDFILE=state/.footprint.pid
 INTERVAL="${FOOTPRINT_INTERVAL:-5}"

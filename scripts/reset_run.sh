@@ -3,7 +3,7 @@
 #   scripts/reset_run.sh          clear state/* (except state/examples/) and run logs
 #   scripts/reset_run.sh --down   also `docker compose down` first
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "${FEDAML_ROOT:-$(dirname "$0")/..}"   # FEDAML_ROOT overrides the project dir (used by smoke tests)
 if [ "${1:-}" = "--down" ]; then
   docker compose down --remove-orphans 2>/dev/null || true
 fi
