@@ -132,9 +132,8 @@ def template_sections(alert: dict, facts: dict[str, str]) -> dict[str, str]:
     """Template engine: the three prose sections, filled from facts and top features."""
     summary = (
         "Account [SENDER] at bank [SENDER_BANK] paid [AMT] [CUR] by [FMT] to account [RECEIVER] "
-        "at bank [RECEIVER_BANK] on [TS]. In the regulator's held-out sample the sender made "
-        "[N_SENDER_OTHER] other payments to [N_DISTINCT_RECEIVERS] distinct receivers and the receiver "
-        "moved funds onward in [N_RECEIVER_ONWARD] payments. The chain of [N_ROWS] transactions reviewed "
+        "at bank [RECEIVER_BANK] on [TS]. In the regulator's held-out sample the sender [SENDER_ACTIVITY] "
+        "and the receiver [RECEIVER_ACTIVITY]. The chain of [N_ROWS] transactions reviewed "
         "here totals [TOTAL_AMT] and touches [N_BANKS] institution(s) (bank ids [BANKS]). The federated "
         "model scored the trigger transaction [SCORE] (rank [RANK] of the sample)."
     )

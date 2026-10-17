@@ -3,8 +3,9 @@
     python -m fedaml.sar --alert-id A01 [--engine llm|template] [--all]
 
 Outline (fixed): Subject, Summary of activity, Pattern indicators, Institutions involved,
-Recommended action, Model attribution. The LLM fills only the three prose sections and only
-with placeholder tokens; code inserts every number, account id and the model hash. Guardrails:
+Recommended action, Model attribution. Code writes every section from the alert record; the LLM
+adds one "Analyst assessment" paragraph to the summary explaining why the pattern is suspicious,
+from qualitative facts only (it never sees an account id or amount). Guardrails:
 max 400 tokens, temperature 0.2, 60 s timeout, then automatic template fallback noted in the
 footer; any account-like token in the output that is not in the alert JSON forces the fallback.
 """
@@ -21,7 +22,7 @@ import time
 
 from fedaml.llm.client import LlamaClient, LLMUnavailable
 from fedaml.llm.facts import extract_facts, fill_placeholders, glossary, template_sections
-from fedaml.llm.narrate import SYSTEM_PROMPT, build_user_prompt, echoes_input, parse_response
+from fedaml.llm.narrate import SYSTEM_PROMPT, build_user_prompt, parse_response
 
 log = logging.getLogger("fedaml.sar")
 
@@ -62,7 +63,7 @@ def check_account_ids(text: str, alert: dict) -> list[str]:
 
 def llm_sections(alert: dict, facts: dict[str, str], *, max_tokens: int, temperature: float,
                  timeout: float, seed: int) -> tuple[dict[str, str], dict]:
-    """Ask the LLM for the prose, substitute facts, validate. Raises on any problem."""
+    """Code writes the facts; the LLM adds one assessment paragraph. Raises on any guardrail failure."""
     client = LlamaClient()
     if not client.ensure_server():
         raise LLMUnavailable(f"no llama-server reachable at {client.url}")
@@ -71,32 +72,23 @@ def llm_sections(alert: dict, facts: dict[str, str], *, max_tokens: int, tempera
                           temperature=temperature, timeout=timeout, seed=seed)
     finally:
         client.stop()
-    sections = parse_response(res.text)
-    meta: dict = {}
-    tmpl = template_sections(alert, facts)
-    if not sections["pattern_indicators"]:
-        sections["pattern_indicators"] = tmpl["pattern_indicators"]  # by design: code writes the indicators
-    elif echoes_input(sections["pattern_indicators"], alert):
-        # a small model often copies the indicator lines back; use the template bullets (with numbers) instead
-        sections["pattern_indicators"] = tmpl["pattern_indicators"]
-        meta["indicators_source"] = "template (LLM echoed the input lines)"
-    for key, min_words in (("summary", 30), ("recommended_action", 15)):
-        if INSTRUCTION_ECHO.search(sections[key]):  # the model copied the prompt's instructions
-            sections[key] = tmpl[key]
-            meta[f"{key}_source"] = "template (LLM echoed the prompt instructions)"
-        elif len(sections[key].split()) < min_words:  # one-liners are not a SAR narrative
-            sections[key] = tmpl[key]
-            meta[f"{key}_source"] = f"template (LLM wrote under {min_words} words)"
-    filled = {k: fill_placeholders(v, facts) for k, v in sections.items()}
-    leftover = sorted({m for v in filled.values() for m in re.findall(r"\[[A-Z_]+\]", v)})
+    text = fill_placeholders(parse_response(res.text)["assessment"], facts)
+    leftover = sorted(set(re.findall(r"\[[A-Z_]+\]", text)))
     if leftover:
         raise ValueError(f"unknown placeholders in LLM output: {leftover}")
-    bad = check_account_ids("\n".join(filled.values()), alert)
+    if INSTRUCTION_ECHO.search(text):
+        raise ValueError("LLM echoed the prompt instructions")
+    if len(text.split()) < 25:
+        raise ValueError(f"LLM assessment too short ({len(text.split())} words)")
+    bad = check_account_ids(text, alert)
     if bad:
         raise ValueError(f"LLM output contains account-like tokens not in the alert: {bad}")
-    meta.update(model=res.model, seconds=round(res.seconds, 2), completion_tokens=res.completion_tokens,
-                prompt_tokens=res.prompt_tokens, tokens_per_second=round(res.tokens_per_second, 2))
-    return filled, meta
+    tmpl = template_sections(alert, facts)
+    sections = dict(tmpl, summary=f"{tmpl['summary']}\n\n**Analyst assessment (LLM).** {text}")
+    meta = {"model": res.model, "seconds": round(res.seconds, 2), "completion_tokens": res.completion_tokens,
+            "prompt_tokens": res.prompt_tokens, "tokens_per_second": round(res.tokens_per_second, 2),
+            "assessment_words": len(text.split())}
+    return sections, meta
 
 
 def institutions_table(alert: dict) -> str:
@@ -131,8 +123,6 @@ def render(alert: dict, facts: dict[str, str], sections: dict[str, str], footer:
                      f"{(r.get('amt_paid') or 0):,.2f} | {r.get('cur_paid')} | {r.get('fmt')} | {r.get('role', '')} |")
     gen_note = (f"LLM engine ({os.path.basename(str(footer['model']))}), {footer['seconds']} s, "
                 f"{footer['completion_tokens']} tokens"
-                + "".join(f"; {k.replace('_source', '').replace('_', ' ')} from the {v}"
-                          for k, v in footer.items() if k.endswith("_source"))
                 if footer["engine"] == "llm" else
                 f"template engine" + (f" (fallback: {footer['fallback_reason']})" if footer.get("fallback_reason") else ""))
     return f"""# Suspicious Activity Report — alert {facts['ALERT_ID']}
@@ -163,7 +153,7 @@ Chain reviewed ({facts['N_ROWS']} rows, regulator-side held-out sample; syntheti
 {attribution_table(alert)}
 
 ---
-*Generated {footer['generated_at']} by `fedaml.sar` using the {gen_note}. The LLM narrates, the model decides: every account id, amount, bank id and the model hash above were inserted by code from `state/alerts.json`; the language model saw only placeholder tokens. Account ids were checked against the alert record. Data are synthetic (IBM AML HI-Small); no real persons are described.*
+*Generated {footer['generated_at']} by `fedaml.sar` using the {gen_note}. The LLM narrates, the model decides: every fact, account id, amount, bank id and the model hash above were inserted by code from `state/alerts.json`; the language model wrote only the paragraph marked "Analyst assessment (LLM)" and never saw an account id or amount. Account ids were checked against the alert record. Data are synthetic (IBM AML HI-Small); no real persons are described.*
 """
 
 
