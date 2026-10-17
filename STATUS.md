@@ -14,7 +14,7 @@
 |---|---|---|---|
 | MASTER | active | 15:30 | compose TODOs closed (FEDERATION/AUDIT/GENAI flags verified); TAG run-naming decided; next: real-data `docker compose up` on VM by 17:30, fill README/demo numbers from state/ |
 | INFRA | partition DONE 20:23 UTC (17 s, peak 563 MB); compose smoke test ran (5 synthetic banks, 3 rounds, 11 s) | 15:30 (MASTER) | paste smoke-test pass/fail + fix list here; `sample_50k.csv` → Mac (gitignored); `footprint.sh start` during the 17:30 real run; screenshots pass 1 |
-| MODELS | baselines.json keys final (64ba116); data partitioned | 15:30 (MASTER) | **run `fedaml.baselines --banks 1,2,3,4` on the VM now** (500k cap, n_jobs 2) → table + one-sentence summary here; `docs/RESULTS_TABLE.md` file names per TAG decision below |
+| MODELS | **baselines run on VM** (77 s, `state/baselines.json`, `logs/baselines.log`); diagnosing bank 1 at chance | 15:30 | per-feature diagnosis → tell FEDERATION which features are unstable; federated row once `state/global_final.json` exists |
 | FEDERATION | committed dfdbc3d (coordinator/bank/dp/defense/rogue) | 15:30 (MASTER) | **(1) 2-bank run on REAL data on the VM, paste per-round pooled AUC; (2) verify defense on real data: honest banks accepted, rogue excluded, weight cap holds (smoke run at tau 0.5 excluded banks 1–4 and kept the rogue); (3) four tagged runs `TAG=dpoff|dpon|rogue_off|rogue_on` (see Decisions) for REDTEAM/MODELS/dashboard; (4) confirm 10 rounds × 5 banks < 15 min** |
 | REDTEAM | data on VM (verified sha256); code done | 15:30 (MASTER) | `--selftest` on real shards now; then attack `state/global_final_dpoff.json` / `global_final_dpon.json` when FEDERATION tags them; fill `docs/REDTEAM.md` numbers |
 | AUDIT | egress + tests + try_leak (80179a8); dashboard v1 six panels (7af33eb); architecture SVG+mermaid (30392cf) | 15:30 (MASTER) | dashboard on real `state/` during the 17:30 run via `ssh -L 8050`; reference lines from `baselines.json` (`federated.auc`, `centralized_logreg.auc`, `per_bank[id][model].pooled_auc`); `tryleak` live demo; screenshots at 1280×720 |
@@ -115,6 +115,23 @@ Partition runtime 17s, peak RSS 563 MB, seed 42.
 - Tools profile (`docker compose run --rm <svc>`): `attacker`, `genai`, `alerts`, `baselines`, `tryleak`.
 
 ## Decisions log
+- Oct 17 15:30 (MODELS): **Baselines on the VM** — `python -m fedaml.baselines --banks 1,2,3,4 --max-rows 500000 --n-jobs 2 --seed 42`, 77 s total on s390x, origin `state/baselines.json` + `logs/baselines.log`. Train rows 1:359,887 2:56,941 3:51,832 4:49,768 (none capped); test positives 1:122 2:27 3:11 4:26 (AP is noisy for banks 2–4). Centralized logreg on 518,428 pooled rows.
+| Model | Train data | Own-test AUC | Own-test AP | Pooled AUC | Pooled AP | global_test AUC | global_test AP |
+|---|---|---|---|---|---|---|---|
+| logreg | bank 1 only | 0.530 | 0.002 | 0.535 | 0.002 | 0.749 | 0.003 |
+| rf | bank 1 only | 0.539 | 0.002 | 0.442 | 0.001 | 0.504 | 0.002 |
+| hgb | bank 1 only | 0.522 | 0.001 | 0.396 | 0.001 | 0.359 | 0.001 |
+| logreg | bank 2 only | 0.981 | 0.284 | 0.547 | 0.001 | 0.876 | 0.007 |
+| rf | bank 2 only | 0.904 | 0.310 | 0.637 | 0.080 | 0.858 | 0.066 |
+| hgb | bank 2 only | 0.878 | 0.382 | 0.625 | 0.094 | 0.833 | 0.024 |
+| logreg | bank 3 only | 0.987 | 0.146 | 0.595 | 0.028 | 0.872 | 0.014 |
+| rf | bank 3 only | 0.994 | 0.180 | 0.686 | 0.107 | 0.890 | 0.025 |
+| hgb | bank 3 only | 0.712 | 0.238 | 0.596 | 0.074 | 0.763 | 0.018 |
+| logreg | bank 4 only | 0.991 | 0.668 | 0.722 | 0.106 | 0.931 | 0.101 |
+| rf | bank 4 only | 0.989 | 0.372 | 0.655 | 0.118 | 0.854 | 0.042 |
+| hgb | bank 4 only | 0.919 | 0.632 | 0.591 | 0.140 | 0.713 | 0.040 |
+| **centralized logreg (illegal ceiling)** | all banks pooled | – | – | 0.745 | 0.030 | 0.939 | 0.022 |
+  Reading: (a) **Bank 1 (code 070, 69% of all rows) is at chance on its own test for every model** (own AUC 0.52–0.54) while banks 2–4 are at 0.88–0.99 on their own tests; pooled numbers are dominated by bank 1 (90k of 130k pooled rows, 122 of 186 positives), which is why every pooled AUC sits at 0.40–0.75. (b) Best single bank on the pooled basis: bank 4 logreg AUC 0.722 (AP 0.106); best AP bank 4 HGB 0.140. (c) Centralized logreg ceiling: pooled AUC 0.745, AP 0.030 — so a federated **logreg** should land near AUC 0.72–0.75; it will not beat the single-bank tree models on AP. (d) global_test column confirms REDTEAM's shift (centralized 0.939 there vs 0.745 pooled). Diagnosis of bank 1 and of the aggregate features' frame-size dependence in progress; FEDERATION keep going, nothing here changes the update schema.
 - Oct 17 15:30 (MASTER): **Run naming via the coordinator's `--tag`:** `TAG=dpoff`, `dpon`, `rogue_off`, `rogue_on` → `state/global_final_<tag>.json` + `state/status_<tag>.json` (so `status_rogue_off/on.json` match CONTRACTS §6 and REDTEAM's `global_final_dpoff/dpon.json`). MODELS: rename `global_final_rogue_nodefense/defense` → `global_final_rogue_off/on` in `docs/RESULTS_TABLE.md`. Compose passes `--tag "${TAG:-}"`, `--tau ${TAU:-0.8}`, `--eval-banks ${EVAL_BANKS:-1,2,3,4}`. Demo sequence: `TAG=dpoff DP=off BANKS=1,2,3,4 docker compose up --scale rogue=0`, then `TAG=dpon`, then `TAG=rogue_off DEFENSE=off`, then `TAG=rogue_on` (the live one).
 - Oct 17 15:30 (MASTER, observation for FEDERATION): data is skewed — bank 1 holds 360k train rows vs 50–57k for banks 2–4 and 33k for the rogue, so n_samples-weighted FedAvg is ~70 % bank 1; the 2× median weight cap will also cap honest bank 1 (~100k). FEDERATION decides and documents the choice in the README section on weighting; MASTER accepts either as long as it is stated.
 - Oct 17 13:30 (MODELS): `state/baselines.json` final key layout per CONTRACTS §6: per-bank model entries `{"auc","ap"}` = bank's own test.csv, plus `pooled_auc, pooled_ap` (pooled per-bank tests) and `global_auc, global_ap` (global_test control). `centralized_logreg` and `federated`: `auc, ap` ARE the pooled numbers, duplicated as `pooled_auc, pooled_ap`, plus `n`, `per_bank{id:{auc,ap}}`, `global_auc, global_ap`. AUDIT: your `sample_state.py` is compatible (`centralized_logreg.pooled_auc` exists and equals `.auc`; per-bank `.auc` is own-test). INFRA: `scripts/make_synthetic_partition.py` works with the loaders; from a plain shell it needs `PYTHONPATH=. python scripts/make_synthetic_partition.py --out <dir> --rows 60000 --banks 5` (containers already set PYTHONPATH=/app). Verified: `python -m fedaml.baselines --banks 1,2 --data-dir <dir>` runs on its output.
