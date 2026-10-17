@@ -76,8 +76,46 @@ python -m fedaml.sar --all --engine llm
 ```
 Env: `LLM_URL` (default `http://127.0.0.1:8080`), `LLM_MODEL_PATH` + `LLAMA_SERVER_BIN` to auto-spawn, `LLM_THREADS`.
 
-## Seconds per SAR
-(filled from `state/sar/_runs.jsonl` after the VM run)
+## Seconds per SAR (measured on the VM, `state/sar/_runs.jsonl`, synthetic fixture alerts A01–A03)
+| Alert | Engine | Prompt tokens | Completion tokens | LLM seconds | Wall seconds (process) | Peak RSS |
+|---|---|---|---|---|---|---|
+| A01 | llm | 588 | 346 | 23.5 | 24.9 | 789 MB |
+| A02 | llm | 588 | 346 | 23.2 | 24.6 | 789 MB |
+| A03 | llm | 588 | 346 | 24.2 | 25.6 | 789 MB |
+| any | template | — | — | — | < 1 | ~90 MB |
+
+Wall time includes spawning `llama-server` (1 s) and loading the model; with the `llm` container already
+running, a SAR takes the LLM seconds only. The 60 s timeout leaves more than 2× headroom. All three LLM SARs
+passed the account-id post-check (no fallback).
+
+## Container
+`fedaml/llm/Dockerfile` builds llama.cpp from source in a multi-stage image (`fedaml-llm`, 289 MB, built on the
+VM in 330 s). Weights live in the `./models` volume, not in the image. Measured: container reports healthy
+6.4 s after `docker run`; the server process RSS is ~85 MB in `docker stats` because the 639 MiB GGUF is
+memory-mapped (page cache), so budget ~0.8 GB while it answers.
+
+```
+docker build -f fedaml/llm/Dockerfile -t fedaml-llm .                  # once, ~5.5 min on the VM
+docker run --rm -v ./models:/models fedaml-llm /app/fetch_model.sh     # once: download + big-endian convert (~1 min)
+docker run -d --name llm -p 127.0.0.1:8080:8080 -v ./models:/models fedaml-llm
+curl -s localhost:8080/health
+```
+Proposed `docker-compose.yml` fragment (MASTER owns the file):
+```yaml
+  llm:
+    build: { context: ., dockerfile: fedaml/llm/Dockerfile }
+    image: fedaml-llm
+    container_name: llm
+    profiles: ["tools"]
+    volumes: ["./models:/models"]
+    ports: ["127.0.0.1:8080:8080"]
+    environment: { LLM_MODEL_FILE: qwen2.5-0.5b-instruct-q8_0-be.gguf, LLM_THREADS: "3" }
+  genai:
+    environment: { LLM_URL: http://llm:8080 }     # instead of host.docker.internal
+    depends_on: { llm: { condition: service_healthy } }
+```
+Demo sequence: training finishes → `docker compose up -d llm` → `ALERT_ID=A01 SAR_ENGINE=llm docker compose run --rm genai`.
+Never run the LLM while the five banks train: a parallel CPU-bound job cut generation from 39 to 6 tok/s in our test.
 
 ## Honest limits
 - Qwen2.5-0.5B is a 0.5 B-parameter model: fluent but shallow. It is used for narration only; nothing it writes
