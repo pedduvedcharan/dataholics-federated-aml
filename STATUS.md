@@ -195,6 +195,10 @@ Partition runtime 17s, peak RSS 563 MB, seed 42.
 - Oct 17 12:00: idea locked (cross-bank AML, federated). Additions accepted: regulator view (#2), rogue bank (#4). Paillier and ML-DSA are stretch.
 
 ## Numbers for the slides (file of origin required)
+- REDTEAM + FEDERATION (17:00), rogue-bank evidence, bank 5 sends `--attack scale --factor -20`, 10 rounds, read from the VM files:
+  - defense off (`state/status_rogue_off.json`): global AUC 0.500 after 10 rounds; bank 5 accepted every round.
+  - defense on, no DP (`state/status_rogue_on.json`): global AUC 0.989; bank 5 excluded in **10/10** rounds (cosine distance to median 1.64–1.84); no honest bank excluded.
+  - Caveats measured, do not put on a slide as wins: under central DP (`status_rogue_on_dp05.json` / `dp08.json`) bank 5 is still excluded 10/10, but honest banks are also excluded in 5 / 3 rounds. The label-flip rogue (`status_rogue_on_flip.json`) is never excluded (final AUC 0.954). The **local-DP σ 0.3 run with defense on (`status_rogue_on_dp.json`) was still running at 17:00 and had excluded bank 5 in only 1 of 6 rounds**: local noise may hide the poisoned direction. FEDERATION to confirm before the demo pairs local DP with the rogue scene.
 - REDTEAM (16:55), `state/redteam.json` on the VM (20:51 UTC, `python -m fedaml.redteam --model-off state/global_final_dpoff.json --model-on state/global_final_dpon_s03.json`, 36 s, seed 42). Auditing game: one held-out laundering transaction of bank 3, IN vs OUT of bank 3's round update, as the coordinator sees it.
   - DP off: model AUC 0.988 · attack acc 0.860 · attack AUC 0.937 [90 % CI 0.91–0.97] · LEAKS
   - σ 0.3 local (this run): model AUC 0.970 · attack acc 0.518 · attack AUC 0.525 [0.51–0.54] · PROTECTED
