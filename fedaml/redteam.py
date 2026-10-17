@@ -162,13 +162,18 @@ def shadow_attack(loss_mem: np.ndarray, loss_non: np.ndarray, target: str, data:
 
 
 def art_attack(model: dict, pop: Population, names: list[str], seed: int, calib_frac: float = 0.2) -> dict:
-    """ART MembershipInferenceBlackBox (input_type='loss') when ART is installed.
+    """ART MembershipInferenceBlackBox (random-forest attack model over the
+    target's predicted probabilities and the true label) when ART is installed.
 
     Fitted on the calibration split of true members/non-members (ART's standard
     usage, a stronger attacker than shadow), scored on the held-out split.
+    ART's sklearn wrapper has no compute_loss, hence input_type='prediction'.
     """
-    from art.attacks.inference.membership_inference import MembershipInferenceBlackBox
-    from art.estimators.classification.scikitlearn import ScikitlearnLogisticRegression
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        from art.attacks.inference.membership_inference import MembershipInferenceBlackBox
+        from art.estimators.classification.scikitlearn import ScikitlearnLogisticRegression
 
     want = model["feature_names"] or names
     lr = LogisticRegression()
@@ -178,7 +183,7 @@ def art_attack(model: dict, pop: Population, names: list[str], seed: int, calib_
     cm, em = _split(pop.n, calib_frac, rng)
     cn, en = _split(pop.n, calib_frac, rng)
     Xm, Xn = align_columns(pop.X_mem, names, want), align_columns(pop.X_non, names, want)
-    atk = MembershipInferenceBlackBox(ScikitlearnLogisticRegression(model=lr), input_type="loss",
+    atk = MembershipInferenceBlackBox(ScikitlearnLogisticRegression(model=lr), input_type="prediction",
                                       attack_model_type="rf")
     atk.fit(Xm[cm], pop.y_mem[cm], Xn[cn], pop.y_non[cn])
     p = np.r_[atk.infer(Xm[em], pop.y_mem[em], probabilities=True).ravel(),
