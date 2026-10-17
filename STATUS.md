@@ -12,7 +12,7 @@
 | Agent | State | Last update | Next deliverable |
 |---|---|---|---|
 | MASTER | active | 13:10 | decisions logged + relayed; README drafted; compose `llm` service; hourly loop (next ~13:32); `docker compose up` on VM by 17:30 |
-| INFRA | VM + Docker done; watcher armed for CSV | 13:10 (MASTER) | **REQUEST 13:10: compose smoke test on the VM, coordinator + bank1 + bank2 on synthetic data (`ROUNDS=3 docker compose up coordinator bank1 bank2`, after FEDERATION commits), so hostname/volume/timing bugs surface before the real run; paste the result here.** Then partition on landing, `sample_50k.csv` to repo. |
+| INFRA | active | 15:30 | **DATA PARTITIONED on the VM** (table below); compose smoke test PASS (fix list below); `scripts/run_demo.sh` dry-run PASS on synthetic 5-bank data; `data/sample_50k.csv` on the Mac at `data/`. Next: rebuild `fedaml` image once FEDERATION commits; footprint on the real run; screenshots |
 | MODELS | baselines.json keys aligned to CONTRACTS §6 (pooled accepted); INFRA synthetic generator verified; watcher waiting on data only | 13:30 | baselines on VM (500k cap, n_jobs 2) → table here + one-sentence summary to MASTER |
 | FEDERATION | coordinator+bank+dp+defense+rogue committed (dfdbc3d), 2-bank and 5-bank rogue runs proven on synthetic shards | 13:50 | run on the VM with real shards (coordinator + 2 banks in 3 terminals), then dpoff/dpon finals for REDTEAM, status_rogue_off/on; ETA VM numbers 14:45 |
 | REDTEAM | data landed; waiting on partition + models | 15:25 | **`data/raw/HI-Small_Trans.csv` is on the VM (5,078,345 rows, sha256 b19d39f5…).** Next: `--selftest` on real shards as soon as `data/banks/bank_1`, `bank_2` exist; then FEDERATION's `global_final_dpoff.json` / `global_final_dpon.json` |
@@ -43,6 +43,48 @@ SSH alias `dataholics` added to `~/.ssh/config` on the lead's Mac; key `~/Downlo
 - Hardware detail for slides (from `lscpu`, saved in `submission/screenshots/01_vm_facts.txt` on the VM): IBM/S390 machine type 9175, 3 CPUs @ 5508 MHz, Big Endian, hypervisor z/VM 7.3.0, kernel 6.8.0-147 s390x; CPU flags include `vx`, `nnpa`. Say "LinuxONE VM on IBM Z (machine type 9175)"; don't name a model number we can't source.
 - `cmake`, `build-essential`, `pkg-config` preinstalled on the VM for P6 (llama.cpp attempts). `scripts/footprint.sh` verified against a live container.
 - Read partitioned CSVs with `dtype={'from_bank': str, 'to_bank': str, 'from_acct': str, 'to_acct': str}, parse_dates=['ts']` — account ids like `81245E60` turn into floats otherwise. `ts` is written as `YYYY-MM-DD HH:MM:SS`.
+
+## INFRA: data partition (REAL, done 15:23 CDT on the VM, `~/fedaml/logs/partition.log`, `~/fedaml/data/bank_map.json`)
+Raw file verified: `data/raw/HI-Small_Trans.csv` 475,664,283 bytes, `wc -l` = 5,078,346 lines (header + 5,078,345 rows), header `Timestamp,From Bank,Account,To Bank,Account,Amount Received,Receiving Currency,Amount Paid,Payment Currency,Payment Format,Is Laundering`.
+
+Source `HI-Small_Trans.csv`: 5,078,345 rows, 5,177 laundering (1 in 981), 2022-09-01 00:00:00 .. 2022-09-18 16:18:00.
+
+| bank_id | role | from_bank | rows_raw | laund_raw | laund_rate | train_rows | train_laund | test_rows | test_laund | train_capped |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | bank | 070 | 449,859 | 633 | 1 in 711 | 359,887 | 511 | 89,972 | 122 | no |
+| 2 | bank | 012 | 71,177 | 72 | 1 in 989 | 56,941 | 45 | 14,236 | 27 | no |
+| 3 | bank | 010 | 64,791 | 44 | 1 in 1,473 | 51,832 | 33 | 12,959 | 11 | no |
+| 4 | bank | 001 | 62,211 | 50 | 1 in 1,244 | 49,768 | 24 | 12,443 | 26 | no |
+| 5 | rogue | 020 | 41,008 | 67 | 1 in 612 | 32,806 | 34 | 8,202 | 33 | no |
+
+`global_test.csv`: 200,000 rows, 354 laundering, stratified by label from 1,015,882 rows with ts >= 2022-09-08 16:12:00 (last 20% of time, all banks).
+`sample_50k.csv`: 50,000 rows, 5,177 laundering (all of them).
+Partition runtime 17s, peak RSS 563 MB, seed 42.
+
+- Bank codes are zero-padded strings (`070`, `012`, `010`, `001`, `020`); account ids are hex-like (`8000EBD30`, `81245E60`). **Everyone (MODELS, FEDERATION, REDTEAM, GENAI) reads the shards with:**
+  ```python
+  pd.read_csv(path, dtype={"from_bank": str, "to_bank": str, "from_acct": str, "to_acct": str}, parse_dates=["ts"])
+  ```
+  (`fedaml.features.read_csv` already does this.) Without `dtype=str`, `070` becomes `70` and `81245E60` becomes `8.1e64`. `ts` is `YYYY-MM-DD HH:MM:SS`.
+- No bank hit the 500k train cap (largest is bank 1 with 359,887 train rows), so train = the earliest 80% of each bank's rows, untouched.
+- Local dev copy: `data/sample_50k.csv` (50,000 rows, all 5,177 laundering rows, 3,335 distinct from_bank codes) + `data/bank_map.json` + `data/partition_summary.md` are in the Mac clone under `data/` (gitignored). On the VM: `~/fedaml/data/sample_50k.csv`.
+- Sizes on VM: raw 454 MB, bank_1 41 MB, bank_2..5 3-6 MB each, global_test 19 MB. Disk now 14 GB used / 34 GB free.
+
+## INFRA: compose smoke test + run_demo dry run (15:05-15:25 CDT, synthetic data in `~/smoke` on the VM, never `~/fedaml/data`)
+**PASS.** coordinator + bank1 + bank2 + dashboard (`BANKS=1,2 ROUNDS=3`): coordinator healthcheck -> healthy, banks reached `http://coordinator:8000`, 3 rounds in 11 s, `state/status.json` + `global_round_1..3.json` + `global_final.json` on the host volume, `logs/egress/bank_1.jsonl` + `bank_2.jsonl` with `rows_shared: 0, params_shared: 21`, dashboard `/api/state` HTTP 200 reading them, banks exited 0, coordinator lingers 60 s then exits. Then `scripts/run_demo.sh` ran the whole default profile (5 banks incl. rogue) twice (DP off, DP on) + tryleak + attacker + alerts in 37 s. `state/footprint.json` produced with all CONTRACTS §6 keys (`per_container_peak_rss_mb`, `seconds_per_round`, `total_runtime_s`, `cpu_count`, `arch`): per-container peak RSS 90 MB per bank, 101 MB coordinator, 28 MB dashboard on 10k-row synthetic shards.
+`fedaml:smoke` = image built from the Mac working tree (incl. FEDERATION's uncommitted files) into `~/smoke/ctx`; it was needed because the real image has no coordinator (see fix 1). Smoke containers are down; `~/smoke` stays for future dry runs: `cd ~/smoke && FEDAML_ROOT=$HOME/smoke COMPOSE_EXTRA="-f $HOME/fedaml/docker-compose.yml -f $HOME/smoke/override.yml --project-directory $HOME/smoke" DEMO_PORTS="8001 8051" ROUNDS=3 scripts/run_demo.sh`.
+
+**Fix list (TODO for MASTER / owners):**
+1. **FEDERATION code is not in git.** `fedaml/bank.py coordinator.py defense.py dp.py rogue.py` are untracked on the Mac (`git status`), so the VM image `fedaml` has no `fedaml.coordinator` and plain `docker compose up` fails with `No module named fedaml.coordinator`. FEDERATION: commit + push; INFRA then rebuilds (`cd ~/fedaml && git pull && docker build -t fedaml .`, ~30 s incremental).
+2. **Host port 8050 is taken** by a host-side dashboard process (`python3` pid 18089, AUDIT's dev server) -> compose `dashboard` fails `failed to bind host port 127.0.0.1:8050`. Kill it before the real run (`run_demo.sh` preflight refuses to start while 8000/8050 are held by non-compose processes).
+3. **Defense excluded all honest banks and kept the rogue** in the DP-on synthetic run: last round `accepted=[5] excluded=[1,2,3,4]` (`~/smoke/state/status_dpon.json`), while the DP-off run correctly gave `accepted=[1,2,3,4] excluded=[5]`. With DP noise the honest deltas look like outliers vs the rogue's scaled one. FEDERATION: check `defense.py` median/cosine logic under `DP=on` (synthetic 10k-row shards, factor -20); must be re-checked on real data.
+4. **`genai` depends on `llm` which exits 1** when no model is present (`dependency failed to start: container llm exited (1)`), so `docker compose run --rm genai` fails even with `SAR_ENGINE=template`. MASTER/GENAI: `depends_on: llm: {condition: service_started, required: false}` or fetch the model first (`docker compose run --rm llm /app/fetch_model.sh`).
+5. `attacker` container: `ART not available (No module named 'art')` -> loss-threshold/shadow fallback ran. INFRA fixed: Dockerfile now pip-installs `adversarial-robustness-toolbox` (pure Python); takes effect at the next image build.
+6. `compose` has no `--tag` for the coordinator, so `run_demo.sh` copies `state/global_final.json` -> `global_final_dpoff.json` / `global_final_dpon.json` (+ `status_dpoff/dpon.json`, `status_rogue_on.json`) itself. Optional: add `--tag ${TAG:-}` to the coordinator command.
+7. Containers run as root: everything they write to `state/` and `logs/` is root-owned, and `state/alerts.json` is mode 0600 (GENAI's writer) -> unreadable by `linux1` on the host (dashboard container reads it fine as root). `scripts/reset_run.sh` now falls back to `sudo rm`. Option for MASTER: `user: "1000:1000"` in `x-common`.
+8. Note: `footprint.json` `seconds_per_round` now comes from the coordinator's `status.json` (0.61 s synthetic); the file-mtime estimate (2.0 s, includes bank poll interval) is kept as `seconds_per_round_from_mtimes`.
+
+**`scripts/run_demo.sh` (for MASTER's rehearsal):** `cd ~/fedaml && scripts/run_demo.sh` = preflight (data, image, ports) -> `reset_run.sh --down` -> `footprint.sh start` -> DP-off run (DEFENSE on) -> DP-on run (the demo model) -> `docker ps`/`docker stats` text to `submission/screenshots/02_docker_ps.txt` -> tryleak -> attacker -> alerts -> genai -> `footprint.sh stop`. Flags `--skip-off --no-reset --no-tools`; knobs `ROUNDS EPOCHS SIGMA CLIP SEED BANKS ROGUE_* ALERT_ID SAR_ENGINE WAIT_MAX`. Dashboard stays up afterwards.
 
 ## Blockers
 - ~~[13:10] Kaggle login~~ → RESOLVED: lead logged in; REDTEAM downloaded the file (see next line).

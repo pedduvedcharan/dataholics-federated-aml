@@ -59,6 +59,14 @@ rounds = sorted(glob.glob("state/global_round_*.json"), key=lambda p: int(re.sea
 mtimes = [os.path.getmtime(p) for p in rounds]
 gaps = [b - a for a, b in zip(mtimes, mtimes[1:])]
 seconds_per_round = round(sum(gaps) / len(gaps), 1) if gaps else None
+coord = {}
+try:  # the coordinator reports its own timing in status.json (preferred over file mtimes)
+    st = json.load(open("state/status.json"))
+    coord = {"seconds_per_round": st.get("seconds_per_round"), "total_runtime_s": st.get("total_runtime_s"), "rounds": st.get("round")}
+    if coord["seconds_per_round"] is not None:
+        seconds_per_round = coord["seconds_per_round"]
+except Exception:  # noqa: BLE001
+    pass
 if stop is None:
     stop = int(time.time())
 total = (stop - start) if start else (round(mtimes[-1] - mtimes[0]) if len(mtimes) > 1 else None)
@@ -74,7 +82,9 @@ out = {
     "samples": samples,
     "sample_interval_s": int(os.environ.get("FOOTPRINT_INTERVAL", "5")),
     "measured_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    "sources": {"memory": log, "rounds": "mtime of state/global_round_<r>.json"},
+    "seconds_per_round_from_mtimes": round(sum(gaps) / len(gaps), 1) if gaps else None,
+    "coordinator_timing": coord,
+    "sources": {"memory": log, "rounds": "state/status.json seconds_per_round, else mtime of state/global_round_<r>.json"},
 }
 os.makedirs("state", exist_ok=True)
 tmp = "state/footprint.json.tmp"

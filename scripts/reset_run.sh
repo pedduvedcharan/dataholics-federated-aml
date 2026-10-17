@@ -9,8 +9,9 @@ if [ "${1:-}" = "--down" ]; then
 fi
 scripts/footprint.sh stop >/dev/null 2>&1 || true
 mkdir -p state logs/egress
-find state -mindepth 1 -maxdepth 1 ! -name examples -exec rm -rf {} +
-find logs -mindepth 1 ! -name 'setup_vm.log' ! -name 'docker_build.log' ! -name 'partition.log' -exec rm -rf {} + 2>/dev/null || true
+RM="rm -rf"; [ -n "$(find state logs -user root -print -quit 2>/dev/null)" ] && RM="sudo rm -rf"   # containers write as root
+find state -mindepth 1 -maxdepth 1 ! -name examples -exec $RM {} +
+find logs -mindepth 1 ! -name 'setup_vm.log' ! -name 'docker_build.log' ! -name 'partition.log' -exec $RM {} + 2>/dev/null || true
 mkdir -p logs/egress state/sar
 echo "reset done: state/ and logs/ cleared (data/ untouched)"
 ls -la state logs
