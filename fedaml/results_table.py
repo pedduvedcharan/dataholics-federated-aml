@@ -37,6 +37,32 @@ def _load(path: Path) -> dict | None:
         return None
 
 
+def _cmp(x: float, y: float, tol: float = 0.002) -> str:
+    """'beats' / 'ties' / 'trails' for x vs y with a tolerance for third-decimal noise."""
+    return "ties" if abs(x - y) <= tol else ("beats" if x > y else "trails")
+
+
+def reading(fed: dict, best_auc: tuple, best_ap: tuple, cent: dict) -> list[str]:
+    """Data-driven sentences comparing each federated run with the baselines."""
+    out = []
+    for tag, name in (("dpoff", "DP off"), ("dpon", "DP on")):
+        r = fed.get(tag)
+        if not r:
+            continue
+        out.append(
+            f"- Federated, {name} ({_f(r['auc'])} / {_f(r['ap'])}): {_cmp(r['auc'], best_auc[0])} the best single bank "
+            f"on AUC ({best_auc[1]}, {_f(best_auc[0])}), {_cmp(r['ap'], best_ap[0])} the best single bank on AP "
+            f"({best_ap[1]}, {_f(best_ap[0])}); {_cmp(r['auc'], cent['auc'])} centralized pooling on AUC "
+            f"({_f(cent['auc'])}) and {_cmp(r['ap'], cent['ap'])} it on AP ({_f(cent['ap'])}).")
+    if fed.get("dpoff") and fed.get("dpon"):
+        out.append(f"- Price of DP: {fed['dpoff']['auc'] - fed['dpon']['auc']:+.3f} AUC and "
+                   f"{fed['dpoff']['ap'] - fed['dpon']['ap']:+.3f} AP (DP off minus DP on).")
+    if fed.get("rogue_off") and fed.get("rogue_on"):
+        out.append(f"- Rogue bank: defense off {_f(fed['rogue_off']['auc'])} / {_f(fed['rogue_off']['ap'])}, "
+                   f"defense on {_f(fed['rogue_on']['auc'])} / {_f(fed['rogue_on']['ap'])}.")
+    return out
+
+
 def render(state_dir: Path, data_dir: Path) -> str:
     """Build the markdown table from the VM's state files."""
     b = _load(state_dir / "baselines.json")
@@ -48,11 +74,17 @@ def render(state_dir: Path, data_dir: Path) -> str:
     pos = sum(int(y.sum()) for _, y in tests.values())
     n = sum(len(y) for _, y in tests.values())
     rows = []
+    fed: dict = {}
+    best_auc, best_ap = (-1.0, ""), (-1.0, "")
     for bank, per in sorted(b["per_bank"].items()):
         for key, m in per.items():
             if int(bank) in eval_banks:
                 auc, ap, src = m["pooled_auc"], m["pooled_ap"], f"`per_bank.{bank}.{key}` (`pooled_auc`, `pooled_ap`)"
                 label = f"Bank {bank} {MODEL_LABEL[key]}"
+                if auc is not None and auc > best_auc[0]:
+                    best_auc = (auc, f"bank {bank} {MODEL_LABEL[key]}")
+                if ap is not None and ap > best_ap[0]:
+                    best_ap = (ap, f"bank {bank} {MODEL_LABEL[key]}")
             else:
                 auc, ap, src = m["auc"], m["ap"], f"`per_bank.{bank}.{key}` (`auc`, `ap`: own test)"
                 label = f"Bank {bank} {MODEL_LABEL[key]} (own test; at chance, see note)"
@@ -66,6 +98,7 @@ def render(state_dir: Path, data_dir: Path) -> str:
             rows.append(f"| {label} | {who} | n/a | n/a | `state/global_final_{tag}.json` not found |")
             continue
         r = evaluate_model_pooled(path, tests=tests, eval_banks=eval_banks)
+        fed[tag] = r
         st = _load(state_dir / f"status_{tag}.json") or {}
         dp = st.get("dp") or (_load(path) or {}).get("dp") or {}
         if tag == "dpon" and dp.get("enabled"):
@@ -97,11 +130,12 @@ pooling is not an upper bound here.
 |---|---|---|---|---|
 """ + "\n".join(rows) + """
 
-Reading (results line on the slide): federated without DP matches the best single bank on AUC
-and beats centralized pooling on AP; DP costs about 0.02 AUC and 0.10 AP, the measured price of
-the privacy guarantee the red-team table demonstrates; the rogue bank breaks the model to chance
-and the defense fully restores it. ε is approximate, update-level, and a weak formal guarantee at
-this size; the red-team table carries the privacy claim.
+Reading, computed from the numbers above ("ties" = within 0.002):
+
+""" + "\n".join(reading(fed, best_auc, best_ap, c)) + """
+
+ε is approximate, update-level, and a weak formal guarantee at this size; the red-team table
+carries the privacy claim.
 
 Control (not in this table): every entry in `state/baselines.json` also carries `global_auc` /
 `global_ap` on `data/global_test.csv`, the red team's distribution-shift control. They read lower
