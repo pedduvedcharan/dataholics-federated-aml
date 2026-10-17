@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -70,7 +71,7 @@ def prox_update(X: np.ndarray, y: np.ndarray, start: np.ndarray, class_w: dict, 
 
 
 def raw_updates(X: np.ndarray, y: np.ndarray, canary: np.ndarray, start: np.ndarray, trials: int, trainer: str,
-                subsample: float, epochs: int, eta: float, seed: int) -> dict[str, np.ndarray]:
+                subsample: float, epochs: int, eta: float, seed: int, mu: float = 0.1) -> dict[str, np.ndarray]:
     """Pre-noise updates for both worlds. Trial t uses the same seeded subsample of the bank's
     other rows in both worlds (the attacker does not know which rows those are), so IN and OUT
     differ only by the target row."""
@@ -83,7 +84,7 @@ def raw_updates(X: np.ndarray, y: np.ndarray, canary: np.ndarray, start: np.ndar
         Xo, yo = X[keep], y[keep]
         for world, (Xa, ya) in (("in", (np.vstack([Xo, canary[None, :]]), np.r_[yo, 1])), ("out", (Xo, yo))):
             if trainer == "prox":
-                ups[world].append(prox_update(Xa, ya, start, cw))
+                ups[world].append(prox_update(Xa, ya, start, cw, mu=mu))
             else:
                 ups[world].append(local_update(Xa, ya, start, epochs, eta, cw, seed + 1000 + t))
     return {k: np.array(v) for k, v in ups.items()}
@@ -169,8 +170,13 @@ def pick_canary(X_te: np.ndarray, y_te: np.ndarray, start: np.ndarray) -> tuple[
     return i, X_te[i]
 
 
+def default_mu() -> float:
+    """Same proximal strength the banks use: env MU (compose sets it), else the demo value 0.1."""
+    return float(os.environ.get("MU", "0.1"))
+
+
 def run_game(data_dir: str, bank: int, dp_cfgs: list[dict], trials: int, seed: int,
-             trainer: str = "prox", subsample: float = 0.9) -> dict:
+             trainer: str = "prox", subsample: float = 0.9, mu: Optional[float] = None) -> dict:
     """Library entry for ``fedaml.redteam``: one set of raw updates, one scored row per DP config."""
     import pandas as pd
     bdir = Path(data_dir) / "banks" / f"bank_{bank}"
@@ -180,9 +186,10 @@ def run_game(data_dir: str, bank: int, dp_cfgs: list[dict], trials: int, seed: i
     X_te, y_te = Xb[len(tr):].astype(np.float64), _labels(te)
     start = np.zeros(len(names) + 1)
     idx, canary = pick_canary(X_te, y_te, start)
-    raw = raw_updates(X, y, canary, start, trials, trainer, subsample, 1, 1e-3, seed)
+    mu = default_mu() if mu is None else mu
+    raw = raw_updates(X, y, canary, start, trials, trainer, subsample, 1, 1e-3, seed, mu)
     rows = [play(raw, c["sigma"] if c["enabled"] else 0.0, c["clip_norm"], seed, bank) for c in dp_cfgs]
-    return {"bank": bank, "target_index": idx, "trials_per_world": trials, "trainer": trainer,
+    return {"bank": bank, "target_index": idx, "trials_per_world": trials, "trainer": trainer, "mu": mu,
             "subsample": subsample, "start_model": "zeros (round 1)", "rows": rows}
 
 
@@ -194,6 +201,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--clip", type=float, default=1.0)
     ap.add_argument("--trials", type=int, default=120, help="per world (IN and OUT)")
     ap.add_argument("--trainer", choices=["prox", "sgd"], default="prox", help="prox = FEDERATION's default bank trainer")
+    ap.add_argument("--mu", type=float, default=None, help="prox strength; default env MU, else 0.1 (match the banks)")
     ap.add_argument("--subsample", type=float, default=0.9,
                     help="fraction of the bank's other rows used per trial (attacker uncertainty); 1.0 = attacker knows them all")
     ap.add_argument("--draws", type=int, default=20, help="fresh DP noise draws per update (DP on)")
@@ -218,14 +226,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         m = load_model(args.start_model)
         start = np.r_[m["coef"], m["intercept"]]
     idx, canary = pick_canary(X_te, y_te, start)
-    raw = raw_updates(X, y, canary, start, args.trials, args.trainer, args.subsample, args.epochs, args.eta, args.seed)
+    mu = default_mu() if args.mu is None else args.mu
+    raw = raw_updates(X, y, canary, start, args.trials, args.trainer, args.subsample, args.epochs, args.eta, args.seed, mu)
     rows = {}
     for sg in [float(s) for s in args.sigmas.split(",")]:
         rows["DP off" if sg == 0 else f"DP on σ={sg}"] = play(raw, sg, args.clip, args.seed, args.bank, args.draws)
     seconds = time.time() - t0
     report = {"attack": "dp_audit_canary", "bank": args.bank, "target_row": f"bank_{args.bank} test.csv laundering row #{idx}",
               "target_row_txn": {k: str(v) for k, v in te.iloc[idx].items() if k not in ("from_acct", "to_acct")},
-              "start_model": args.start_model or "zeros (round 1)", "trainer": args.trainer,
+              "start_model": args.start_model or "zeros (round 1)", "trainer": args.trainer, "mu": mu,
               "subsample": args.subsample, "rows": rows, "seed": args.seed,
               "runtime_s": round(seconds, 1), "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     write_json_atomic(args.out, report)

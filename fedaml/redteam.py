@@ -411,7 +411,7 @@ def format_canary_table(rep: dict) -> str:
             lines.append(f"  ! {r['warning']}")
     g = rep["game"]
     lines.append(f"\nattack: canary_update | {rep['target']} | {g['trials_per_world']} trials per world, half calibrate, "
-                 f"half scored | trainer {g['trainer']}, subsample {g['subsample']} | model AUC = pooled banks 2,3,4 "
+                 f"half scored | trainer {g['trainer']} μ {g['mu']:g}, subsample {g['subsample']} | model AUC = pooled banks 2,3,4 "
                  f"(fedaml.baselines), '-' = σ scored in the game only, no trained model given")
     return "\n".join(lines)
 
@@ -433,6 +433,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--canary-bank", type=int, default=3, help="bank whose round update the headline auditing game attacks")
     ap.add_argument("--canary-trials", type=int, default=100, help="auditing-game trials per world")
+    ap.add_argument("--canary-mu", type=float, default=None, help="prox strength for the game; default env MU, else 0.1 (the banks' value)")
     ap.add_argument("--canary-sigmas", default="0.3,0.5,0.8",
                     help="extra σ values scored in the game (the DP-on models' own σ are always included)")
     ap.add_argument("--no-canary", action="store_true", help="skip the auditing game (model-level attack only)")
@@ -491,7 +492,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                         {c["sigma"] for c in cfg_by.values() if c["enabled"]})
         clip = next((c["clip_norm"] for c in cfg_by.values()), 1.0)
         game = run_game(args.data_dir, args.canary_bank,
-                        [{"enabled": sg > 0, "sigma": sg, "clip_norm": clip} for sg in sigmas], args.canary_trials, args.seed)
+                        [{"enabled": sg > 0, "sigma": sg, "clip_norm": clip} for sg in sigmas], args.canary_trials, args.seed,
+                        mu=args.canary_mu)
         on_cfg = _model_dp(ons[0]) if ons else None
         current = _setting(on_cfg["sigma"]) if on_cfg and on_cfg["enabled"] else None
         report = canary_report(game, cfg_by, model_by, args, model_report, current)
