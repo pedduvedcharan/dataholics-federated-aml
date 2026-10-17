@@ -18,6 +18,8 @@ on ``global_test.csv`` so FEDERATION, REDTEAM and the dashboard share one evalua
 CLI::
 
     python -m fedaml.baselines --banks 1,2,3,4
+    python -m fedaml.baselines --evaluate state/global_final.json
+    python -m fedaml.baselines --alerts state/global_final.json --top-k 20
 """
 from __future__ import annotations
 
@@ -33,8 +35,9 @@ from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassif
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, roc_auc_score
 
-from fedaml.features import (DATA_DIR, FEATURE_NAMES, feature_names_sha256,
-                             load_bank, load_global_test)
+from fedaml.features import (DATA_DIR, FEATURE_DESCRIPTIONS, FEATURE_NAMES, contributions,
+                             feature_names_sha256, featurize, load_bank, load_global_test,
+                             read_csv)
 
 log = logging.getLogger("fedaml.baselines")
 
@@ -206,6 +209,67 @@ def markdown_table(result: dict) -> str:
     return "\n".join(lines)
 
 
+# --------------------------------------------------------------------------- #
+# Alerts for the SAR writer (GENAI consumes state/alerts.json)
+# --------------------------------------------------------------------------- #
+ALERT_TXN_COLS = ["ts", "from_bank", "from_acct", "to_bank", "to_acct",
+                  "amt_paid", "cur_paid", "amt_recv", "cur_recv", "fmt", "is_laundering"]
+
+
+def build_alerts(model_path: str | Path, k: int = 20, chain_len: int = 10,
+                 top_features: int = 5, data_dir: str | Path | None = None) -> dict:
+    """Top-``k`` rows of ``global_test.csv`` by model score, each with its chain.
+
+    A chain is every other global-test transaction that touches the flagged
+    sender or receiver account (up to ``chain_len``, time-ordered). Feature
+    contributions are ``x * coef`` of the logistic model, largest first.
+    """
+    model = load_model_json(model_path)
+    base = Path(data_dir) if data_dir else DATA_DIR
+    df = read_csv(base / "global_test.csv")
+    X = featurize(df)
+    p = predict_proba_json(model, X)
+    contrib = contributions(X, np.asarray(model["coef"], dtype=np.float64))
+    top = np.argsort(-p, kind="stable")[:k]
+    df_rows = df[ALERT_TXN_COLS].astype(object)
+    df_rows["score"] = np.round(p, 6)
+
+    def txn(i: int) -> dict:
+        r = df_rows.iloc[i].to_dict()
+        return {c: (int(v) if c in ("from_bank", "to_bank", "is_laundering") else
+                    float(v) if c in ("amt_paid", "amt_recv", "score") else str(v))
+                for c, v in r.items()}
+
+    alerts = []
+    for rank, i in enumerate(top, start=1):
+        row = df.iloc[i]
+        acct_from = (row["from_bank"], row["from_acct"])
+        acct_to = (row["to_bank"], row["to_acct"])
+        touch = (((df["from_bank"] == acct_from[0]) & (df["from_acct"] == acct_from[1]))
+                 | ((df["to_bank"] == acct_to[0]) & (df["to_acct"] == acct_to[1]))
+                 | ((df["from_bank"] == acct_to[0]) & (df["from_acct"] == acct_to[1]))
+                 | ((df["to_bank"] == acct_from[0]) & (df["to_acct"] == acct_from[1])))
+        touch.iloc[i] = False
+        chain_idx = df.index[touch].to_numpy()
+        chain_idx = chain_idx[np.argsort(df["ts"].iloc[chain_idx].to_numpy(), kind="stable")][:chain_len]
+        order = np.argsort(-contrib[i], kind="stable")[:top_features]
+        alerts.append({
+            "alert_id": f"A{rank:03d}", "rank": rank, "score": float(p[i]),
+            "txn": txn(i),
+            "top_features": [{"name": FEATURE_NAMES[j], "value": float(X[i, j]),
+                              "contribution": float(contrib[i, j]),
+                              "meaning": FEATURE_DESCRIPTIONS[FEATURE_NAMES[j]]} for j in order],
+            "chain": [txn(int(c)) for c in chain_idx],
+            "banks_involved": sorted({int(row["from_bank"]), int(row["to_bank"]),
+                                      *df["from_bank"].iloc[chain_idx].astype(int).tolist(),
+                                      *df["to_bank"].iloc[chain_idx].astype(int).tolist()}),
+        })
+    return {"model": str(model_path), "model_sha256": model.get("sha256"),
+            "n_scored": int(len(df)), "k": k,
+            "alerts_true_laundering": int(sum(a["txn"]["is_laundering"] for a in alerts)),
+            "alerts": alerts}
+
+
 def _main() -> None:
     parser = argparse.ArgumentParser(description="per-bank baselines + centralized ceiling")
     parser.add_argument("--banks", default="1,2,3,4")
@@ -220,12 +284,21 @@ def _main() -> None:
     parser.add_argument("--no-centralized", action="store_true")
     parser.add_argument("--evaluate", default=None,
                         help="only score this global_*.json on global_test.csv and exit")
+    parser.add_argument("--alerts", default=None,
+                        help="only build <state-dir>/alerts.json from this global_*.json and exit")
+    parser.add_argument("--top-k", type=int, default=20)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     data_dir, state_dir = Path(args.data_dir), Path(args.state_dir)
 
     if args.evaluate:
         print(json.dumps(evaluate_model_json(args.evaluate, data_dir=data_dir)))
+        return
+    if args.alerts:
+        alerts = build_alerts(args.alerts, k=args.top_k, data_dir=data_dir)
+        write_json_atomic(alerts, state_dir / "alerts.json")
+        log.info("wrote %s: %d alerts, %d true laundering", state_dir / "alerts.json",
+                 len(alerts["alerts"]), alerts["alerts_true_laundering"])
         return
 
     banks = [int(b) for b in args.banks.split(",") if b.strip()]
