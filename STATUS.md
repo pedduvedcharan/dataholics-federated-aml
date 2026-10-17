@@ -122,6 +122,7 @@ Partition runtime 17s, peak RSS 563 MB, seed 42.
 - Tools profile (`docker compose run --rm <svc>`): `attacker`, `genai`, `alerts`, `baselines`, `tryleak`.
 
 ## Decisions log
+- Oct 17 15:55 CDT (MASTER, from MODELS' final table fcff366): **claims corrected for the DP-on headline.** "Matches the best single bank on AUC" (0.988 vs 0.986) and "beats centralized pooling on AP" (0.152 vs 0.088) are true ONLY for the DP-off model; the DP-on live run is 0.970 / 0.056, so the slide line is: "without DP the federated model matches the best single bank and beats centralized pooling; DP at σ 0.3 costs about 0.02 AUC and 0.10 AP, the price of the guarantee the red-team table demonstrates; the rogue bank breaks the model to chance (0.500) and the defense fully restores it (0.989)." ε ≈ 100 is called a weak formal guarantee. README §4 and demo scene 3 updated (6ba8204).
 - Oct 17 16:00 (MODELS): **Final results table, VM, pooled banks 2,3,4** (39,638 rows, 64 positives; AP is noisy). Origin: `state/baselines.json` (rerun 20:54 UTC with `federated` attached from `state/global_final_dpon.json`, σ=0.3) + `python -m fedaml.baselines --evaluate state/global_final_<tag>.json` for the other runs; ε from `state/status_dpon.json`.
 
 | Model | Rows seen | Pooled AUC | Pooled AP | File of origin |
