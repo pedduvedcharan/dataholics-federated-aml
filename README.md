@@ -78,24 +78,27 @@ All numbers come from files written on the VM. Placeholders are replaced only fr
 |---|---|---|
 | Best single-bank model, pooled test over banks 2–4 (AUC / AP) | 0.986 (bank 4 logreg) / 0.405 (bank 4 HGB) | `state/baselines.json` |
 | Centralized pooling logistic regression, all four banks' raw rows (AUC / AP) | 0.983 / 0.088 | `state/baselines.json` |
-| Federated global model, DP off, pooled test over banks 2–4 (AUC / AP) | 0.988 / {{FED_AP_DPOFF}} | `state/status_dpoff.json`, `state/baselines.json` |
-| Federated global model, DP on (σ 0.3, bank-side noise), pooled test over banks 2–4 | 0.970 | `state/status_dpon.json` |
+| Federated global model, DP off, pooled test over banks 2–4 (AUC / AP) | 0.988 / 0.152 | `state/status_dpoff.json`, `state/baselines.json` |
+| Federated global model, DP on (σ 0.3, bank-side noise), pooled test over banks 2–4 (AUC / AP) | 0.970 / 0.056 | `state/status_dpon.json`, `state/baselines.json` |
 | Bank 1 (code 070), any model, own test set | ≈ 0.5 (not learnable with per-row features, see §6) | `state/baselines.json` |
 | Transaction rows shared by all banks, all rounds | 0 | `logs/egress/bank_*.jsonl` |
 | Model parameters shared per update | 21 (about 750 bytes) | `logs/egress/bank_*.jsonl` |
-| Rogue bank (scaled poisoning), defense off → final pooled AUC | 0.500 | `state/status_rogue_off.json` |
-| Rogue bank, defense on (DP off): rounds excluded / honest banks excluded / final AUC | 10 of 10 / none / 0.989 | `state/status_rogue_on.json` |
+| Rogue bank (scaled poisoning), defense off → final pooled AUC / AP | 0.500 / 0.002 | `state/status_rogue_off.json`, `state/baselines.json` |
+| Rogue bank, defense on (DP off): rounds excluded / honest banks excluded / final AUC / AP | 10 of 10 / none / 0.989 / 0.183 | `state/status_rogue_on.json`, `state/baselines.json` |
 | Membership auditing game, DP off: attack accuracy / attack AUC | 0.860 / 0.937 [0.91, 0.97] | `state/redteam.json` |
 | Membership auditing game, DP on σ 0.3: attack accuracy / attack AUC | 0.518 / 0.525 [0.51, 0.54] | `state/redteam.json` |
 | Formal ε (approximate, update-level, 10 rounds, σ 0.3) | ≈ 100 (loose; the measured attack above is the evidence) | `state/status_dpon.json`, `state/redteam.json` |
 | LLM generation speed on s390x | 27.3 tok/s mean (100 tokens, 3 threads) | `state/llm_runtime.json` |
 | Peak RAM, all containers / seconds per round / total runtime | {{PEAK_RSS_MB}} MB / {{SEC_PER_ROUND}} s / {{TOTAL_RUNTIME}} | `state/footprint.json` |
 
-How to read it: the federated model **matches the best single bank on AUC** (0.988 vs 0.986, a tie) and **beats
-centralized pooling on average precision** (0.143 vs 0.088: more true laundering per alert), while banks whose own
-detectors are weak (bank 3's best tree reaches 0.78 pooled) receive the strong model without sharing a row. Tree
-models still beat any logistic model on average precision inside one bank; the federated model is logistic by design.
-The DP-on model pays a measured 0.018 AUC for bringing the membership attack to near chance (0.525, 90 % CI 0.51–0.54 at σ 0.3; 0.50 and 0.49 at σ 0.5 and 0.8).
+How to read it: **without DP** the federated model matches the best single bank on AUC (0.988 vs 0.986, a tie)
+and beats centralized pooling on average precision (0.152 vs 0.088: more true laundering per alert), while banks whose
+own detectors are weak (bank 3's best tree reaches 0.78 pooled) receive the strong model without sharing a row.
+**With DP** at σ 0.3 the same model lands at 0.970 AUC and 0.056 AP: about 0.02 AUC and 0.10 AP is the measured price of
+the privacy guarantee the red-team table demonstrates, and we state it rather than hide it. The formal ε ≈ 100 is a
+weak guarantee; the measured attack carries the privacy claim. The rogue result is the strongest story: a poisoned bank
+drives the model to chance (0.500) and the defense restores it (0.989, no honest bank excluded). Tree models still beat
+any logistic model on average precision inside one bank; the federated model is logistic by design.
 
 Two honest findings. **Privacy noise blinds the poisoning screen:** with bank-side noise the cosine defense caught the
 rogue in 1 of 6 rounds, so the rogue-defense numbers above are measured with DP off, and resolving this needs secure
