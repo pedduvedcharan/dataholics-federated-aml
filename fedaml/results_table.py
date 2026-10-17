@@ -22,8 +22,8 @@ log = logging.getLogger("fedaml.results_table")
 MODEL_LABEL = {"logreg": "logistic regression", "rf": "random forest", "hgb": "hist. gradient boosting"}
 TAGS = [("dpoff", "Federated logistic regression, DP off", "no row leaves any bank"),
         ("dpon", "Federated logistic regression, DP on", "no row leaves any bank; updates clipped + noised"),
-        ("rogue_off", "Federated, rogue bank 5 present, defense **off**", "bank 5 sends poisoned updates"),
-        ("rogue_on", "Federated, rogue bank 5 present, defense **on**", "bank 5 detected and excluded")]
+        ("rogue_off", "Federated, rogue bank 5 present, defense off", "bank 5 sends poisoned updates"),
+        ("rogue_on", "Federated, rogue bank 5 present, defense on", "bank 5 detected and excluded")]
 
 
 def _f(v) -> str:
