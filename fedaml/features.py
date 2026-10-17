@@ -88,10 +88,11 @@ assert set(FEATURE_DESCRIPTIONS) == set(FEATURE_NAMES)
 # Where data/ lives. Override with FEDAML_DATA_DIR (containers mount ./data).
 DATA_DIR = Path(os.environ.get("FEDAML_DATA_DIR", "data"))
 
-# dtypes used whenever a bank CSV is read, so account ids never become ints.
+# dtypes used whenever a bank CSV is read (INFRA's exact call, STATUS.md): the four
+# bank/account columns MUST be str or ids like "81245E60" turn into floats.
 CSV_DTYPES = {
-    "from_bank": "string", "to_bank": "string",  # bank codes keep leading zeros ("011")
-    "from_acct": "string", "to_acct": "string",
+    "from_bank": str, "to_bank": str,
+    "from_acct": str, "to_acct": str,
     "amt_recv": "float64", "amt_paid": "float64",
     "cur_recv": "string", "cur_paid": "string", "fmt": "string",
     "is_laundering": "int8",
@@ -188,7 +189,8 @@ def read_csv(path: str | Path, nrows: int | None = None) -> pd.DataFrame:
     head = pd.read_csv(path, nrows=0)
     canon_of = {c: RAW_TO_CANON.get(c, c) for c in head.columns}
     dtypes = {c: CSV_DTYPES[k] for c, k in canon_of.items() if k in CSV_DTYPES}
-    df = pd.read_csv(path, dtype=dtypes, nrows=nrows)
+    ts_col = [c for c, k in canon_of.items() if k == "ts"]
+    df = pd.read_csv(path, dtype=dtypes, nrows=nrows, parse_dates=ts_col)
     return canonicalize(df)
 
 
@@ -270,6 +272,7 @@ def selftest(df: pd.DataFrame) -> dict:
     idx = FEATURE_NAMES.index("snd_txn_cnt_log")
     assert (half[:, idx] <= X1[: len(half), idx] + 1e-6).all()
     y = labels(df)
+    _check_id_roundtrip()
     return {
         "rows": int(len(df)), "n_features": N_FEATURES,
         "laundering_rows": int(y.sum()),
@@ -277,6 +280,26 @@ def selftest(df: pd.DataFrame) -> dict:
         "col_min": X1.min(axis=0).round(3).tolist(),
         "col_max": X1.max(axis=0).round(3).tolist(),
     }
+
+
+def _check_id_roundtrip() -> None:
+    """Account/bank ids with an E (``81245E60``) must survive CSV -> read_csv as text."""
+    import io
+    import tempfile
+    ids = ["81245E60", "1E5", "800E3F2A1", "011", "0"]
+    df = make_synthetic(len(ids), seed=0)
+    df["from_acct"] = ids
+    df["to_acct"] = ids[::-1]
+    df["from_bank"] = ["011", "1E5", "020", "3196", "0"]
+    df["to_bank"] = df["from_bank"]
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as f:
+        df.to_csv(f, index=False)
+        path = f.name
+    back = read_csv(path)
+    os.unlink(path)
+    for c in ("from_acct", "to_acct", "from_bank", "to_bank"):
+        assert back[c].tolist() == df[c].tolist(), f"{c} changed on round trip: {back[c].tolist()}"
+    assert np.array_equal(featurize(df), featurize(back)), "features differ after CSV round trip"
 
 
 # --------------------------------------------------------------------------- #
@@ -288,6 +311,8 @@ TS_FORMATS = ("%Y-%m-%d %H:%M:%S",   # INFRA partition_data.py output
 
 def _parse_ts(s: pd.Series) -> pd.Series:
     """Parse timestamps with the known fixed formats first, generic parser last."""
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return s
     for fmt in TS_FORMATS:
         try:
             return pd.to_datetime(s, format=fmt, errors="raise")
