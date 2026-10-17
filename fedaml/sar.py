@@ -68,10 +68,15 @@ def llm_sections(alert: dict, facts: dict[str, str], *, max_tokens: int, tempera
         client.stop()
     sections = parse_response(res.text)
     meta: dict = {}
+    tmpl = template_sections(alert, facts)
     if echoes_input(sections["pattern_indicators"], alert):
         # a small model often copies the indicator lines back; use the template bullets (with numbers) instead
-        sections["pattern_indicators"] = template_sections(alert, facts)["pattern_indicators"]
+        sections["pattern_indicators"] = tmpl["pattern_indicators"]
         meta["indicators_source"] = "template (LLM echoed the input lines)"
+    for key, min_words in (("summary", 25), ("recommended_action", 15)):
+        if len(sections[key].split()) < min_words:  # one-liners are not a SAR narrative
+            sections[key] = tmpl[key]
+            meta[f"{key}_source"] = f"template (LLM wrote under {min_words} words)"
     filled = {k: fill_placeholders(v, facts) for k, v in sections.items()}
     leftover = sorted({m for v in filled.values() for m in re.findall(r"\[[A-Z_]+\]", v)})
     if leftover:
@@ -116,7 +121,8 @@ def render(alert: dict, facts: dict[str, str], sections: dict[str, str], footer:
                      f"{(r.get('amt_paid') or 0):,.2f} | {r.get('cur_paid')} | {r.get('fmt')} | {r.get('role', '')} |")
     gen_note = (f"LLM engine ({os.path.basename(str(footer['model']))}), {footer['seconds']} s, "
                 f"{footer['completion_tokens']} tokens"
-                + (f"; pattern indicators from the {footer['indicators_source']}" if footer.get("indicators_source") else "")
+                + "".join(f"; {k.replace('_source', '').replace('_', ' ')} from the {v}"
+                          for k, v in footer.items() if k.endswith("_source"))
                 if footer["engine"] == "llm" else
                 f"template engine" + (f" (fallback: {footer['fallback_reason']})" if footer.get("fallback_reason") else ""))
     return f"""# Suspicious Activity Report — alert {facts['ALERT_ID']}
