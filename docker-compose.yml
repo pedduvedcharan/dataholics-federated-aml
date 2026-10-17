@@ -26,7 +26,7 @@ x-common: &common
     - ./logs:/app/logs
   restart: "no"
   init: true
-  # TODO(MASTER, after INFRA footprint run): add mem_limit per service if docker stats shows pressure (8 GB box).
+  # No mem_limit: measured sum of container peaks 1,880 MB of 7.8 GB (state/footprint.json, integration run 21:13 UTC).
 
 x-bank: &bank
   <<: *common
