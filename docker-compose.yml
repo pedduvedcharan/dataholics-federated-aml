@@ -2,7 +2,7 @@
 # One image ("fedaml", built from ./Dockerfile by INFRA), one service per role.
 # Default profile:  docker compose up            -> coordinator, bank1..bank4, rogue, dashboard
 # Tools profile:    docker compose run --rm attacker | genai | alerts | baselines | tryleak   (llm starts with genai)
-# Toggles (env, all optional):  ROUNDS BANKS EVAL_BANKS DP DP_MODE SIGMA CLIP DEFENSE TAU TAG EPOCHS TRAINER ROGUE_ATTACK ROGUE_FACTOR SEED
+# Toggles (env, all optional):  ROUNDS BANKS EVAL_BANKS DP DP_MODE SIGMA CLIP DEFENSE TAU TAG EPOCHS TRAINER MU ROGUE_ATTACK ROGUE_FACTOR SEED
 #   e.g.  DP=off DEFENSE=off docker compose up           (the "unprotected" run)
 #         DP=on  DEFENSE=on  docker compose up           (the demo run; defaults)
 # Volumes: ./data (read-only shards), ./state (models + status JSON), ./logs (egress audit).
@@ -30,6 +30,12 @@ x-common: &common
 
 x-bank: &bank
   <<: *common
+  environment:
+    PYTHONPATH: /app
+    PYTHONUNBUFFERED: "1"
+    SEED: ${SEED:-42}
+    TRAINER: ${TRAINER:-prox}      # FedProx-style L-BFGS with proximal pull (bank.py)
+    MU: ${MU:-0.1}                 # MASTER 16:10 CDT: mu 0.1 measured better than 0.5 (DP on 0.987/0.093 vs 0.970/0.056); bank 1 accepted 7/10 DP off, disclosed
   depends_on:
     coordinator:
       condition: service_healthy
