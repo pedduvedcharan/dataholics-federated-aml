@@ -65,7 +65,8 @@ services:
       --round-timeout ${ROUND_TIMEOUT:-120}
       --tag "${TAG:-}"
       --seed ${SEED:-42}
-    # No-rogue run: BANKS=1,2,3,4 docker compose up --scale rogue=0
+    # No-rogue run: BANKS=1,2,3,4 docker compose up -d coordinator bank1 bank2 bank3 bank4 dashboard  (or scripts/run_demo.sh --no-rogue)
+    # Do NOT combine --scale rogue=0 with a service list: compose fails with "no such service: rogue: disabled".
     # DP_MODE local (MASTER): banks add the noise BEFORE egress.send, so the coordinator never sees an un-noised update.
     # SIGMA 0.5 (MASTER 16:10 CDT): at mu 0.1 the auditing game leaks at sigma 0.3 (attack AUC 0.551 on bank 3); sigma 0.5 is protected (0.517).
     #   central (DP-FedAvg) is available but is not the story: REDTEAM's auditing game shows the coordinator reads membership at AUC 0.86-0.94 from un-noised updates.
