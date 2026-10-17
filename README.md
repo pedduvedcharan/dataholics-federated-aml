@@ -56,8 +56,8 @@ bash scripts/setup_vm.sh                      # apt python3-* stack, venv, docke
 docker compose build
 
 # federated training (defaults: 10 rounds, DP on, bank-side noise sigma 0.3, defense on, eval banks 2,3,4)
-TAG=dpon docker compose up --scale rogue=0                 # the headline run, banks 1-4
-TAG=dpoff DP=off docker compose up --scale rogue=0         # the unprotected comparison
+TAG=dpon BANKS=1,2,3,4 docker compose up coordinator bank1 bank2 bank3 bank4   # the headline run, banks 1-4
+TAG=dpoff DP=off BANKS=1,2,3,4 docker compose up coordinator bank1 bank2 bank3 bank4   # the unprotected comparison
 TAG=rogue_off DP=off DEFENSE=off docker compose up         # rogue bank 5 poisons, nobody stops it
 TAG=rogue_on  DP=off docker compose up                     # rogue bank 5 poisons, coordinator excludes it
 # every run writes state/global_final_<tag>.json and state/status_<tag>.json
