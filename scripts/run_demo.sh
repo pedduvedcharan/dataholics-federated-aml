@@ -6,7 +6,8 @@
 #   scripts/run_demo.sh --no-reset      keep existing state/ and logs/
 #   scripts/run_demo.sh --no-tools      stop after training (dashboard stays up)
 #
-# Knobs are the compose env vars: ROUNDS EPOCHS SIGMA CLIP SEED BANKS ROGUE_ATTACK ROGUE_FACTOR ALERT_ID SAR_ENGINE.
+# Knobs are the compose env vars: ROUNDS EPOCHS SIGMA CLIP TAU SEED BANKS EVAL_BANKS TRAINER ROGUE_ATTACK ROGUE_FACTOR ALERT_ID SAR_ENGINE.
+# TAG is set per phase (dpoff, dpon) so the coordinator writes state/global_final_<tag>.json itself.
 # WAIT_MAX (default 1800 s) bounds each training phase. COMPOSE_EXTRA adds compose flags (e.g. "-f smoke/override.yml").
 # Both runs keep DEFENSE on so the DP off/on comparison differs in DP only (REDTEAM's request).
 # Writes: state/global_final_dpoff.json, state/global_final_dpon.json (+ status_dpoff/dpon.json, status_rogue_on.json),
@@ -68,12 +69,13 @@ run_phase() {  # $1 = tag (dpoff|dpon), $2 = DP value
   local tag="$1" dp="$2" t; t=$(date +%s)
   log "phase $tag: DP=$dp DEFENSE=on ROUNDS=${ROUNDS:-10} BANKS=${BANKS:-1,2,3,4,5}"
   $DC rm -fs $TRAIN_SVCS >/dev/null 2>&1 || true
-  DP="$dp" DEFENSE=on $DC up -d $TRAIN_SVCS dashboard || die "docker compose up failed"
+  DP="$dp" DEFENSE=on TAG="$tag" $DC up -d $TRAIN_SVCS dashboard || die "docker compose up failed"
   sleep 3
   wait_final "$t"
   log "phase $tag finished in $(( $(date +%s) - t ))s"
-  cp state/global_final.json "state/global_final_${tag}.json"
-  cp state/status.json "state/status_${tag}.json"
+  # compose passes TAG to the coordinator (--tag) which writes these itself; copy only if it did not
+  [ -f "state/global_final_${tag}.json" ] || cp state/global_final.json "state/global_final_${tag}.json"
+  [ -f "state/status_${tag}.json" ] || cp state/status.json "state/status_${tag}.json"
   python3 - "$tag" <<'PY'
 import json, sys
 d = json.load(open("state/status.json"))
@@ -87,7 +89,7 @@ PY
 # ---------------------------------------------------------------- training runs
 [ "$DO_OFF" = 1 ] && run_phase dpoff off
 run_phase dpon on
-cp state/status.json state/status_rogue_on.json   # defense on: rogue exclusions visible to the dashboard
+[ -f state/status_rogue_on.json ] || cp state/status.json state/status_rogue_on.json   # defense on: rogue exclusions visible to the dashboard
 
 # screenshots (text) while the training containers still exist
 { echo "\$ docker ps"; docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"; echo;
