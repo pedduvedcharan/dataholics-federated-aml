@@ -215,6 +215,7 @@ def build_alerts(df: pd.DataFrame, model: dict, top: int = 20, max_rows: int = 1
 
     demo = next((a for a in alerts if int(a["trigger"].get("is_laundering") or 0) == 1), None)
     meta = {
+        "source": None,
         "model_sha256": model.get("sha256"), "model_round": model.get("round"),
         "n_scored": int(len(df)), "prevalence": round(float(y.mean()), 6) if len(y) else None,
         "filter": {"exclude_same_account": exclude_self, "min_banks": min_banks},
@@ -240,7 +241,8 @@ def write_json_atomic(path: str, obj) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Build state/alerts.json from the global model")
-    ap.add_argument("--test", default="data/global_test.csv")
+    ap.add_argument("--test", default="data/global_test.csv",
+                    help="CSV to score; comma-separate several, e.g. data/banks/bank_2/test.csv,data/banks/bank_3/test.csv")
     ap.add_argument("--model", default="state/global_final.json")
     ap.add_argument("--out", default="state/alerts.json")
     ap.add_argument("--top", type=int, default=20)
@@ -256,12 +258,15 @@ def main(argv: list[str] | None = None) -> int:
 
     from fedaml.features import read_csv  # string dtypes for bank codes and account ids
 
-    df = read_csv(args.test, nrows=args.nrows)
-    labels = load_bank_labels(args.bank_map or os.path.join(os.path.dirname(args.test) or ".", "bank_map.json"))
-    log.info("loaded %s: %d rows, laundering rate %.5f", args.test, len(df), df["is_laundering"].mean())
+    paths = [x for x in args.test.split(",") if x]
+    df = pd.concat([read_csv(x, nrows=args.nrows) for x in paths], ignore_index=True)
+    bm = args.bank_map or os.path.join(os.path.dirname(paths[0]) or ".", "bank_map.json")
+    labels = load_bank_labels(bm if os.path.exists(bm) else os.path.join("data", "bank_map.json"))
+    log.info("loaded %s: %d rows, laundering rate %.5f", ",".join(paths), len(df), df["is_laundering"].mean())
     model = load_model(args.model)
     alerts, meta = build_alerts(df, model, args.top, args.max_rows, labels,
                                 exclude_self=not args.keep_same_account, min_banks=args.min_banks)
+    meta["source"] = paths
     write_json_atomic(args.out, {"meta": meta, "alerts": alerts})
     u, f = meta["unfiltered"], meta["filtered"][f"at_{len(alerts)}"] if alerts else {}
     log.info("unfiltered top-%d: %d/%d labelled laundering, %d same-account", u["k"], u["true_laundering"], u["k"],
