@@ -12,7 +12,7 @@
 | INFRA | in progress | 12:50 (seen by MASTER: setup_vm.sh done on VM, image built) | **name the Kaggle downloader; land CSV**; `partition_data.py`; `sample_50k.csv` to repo; record build time + pip results in STATUS |
 | MODELS | features.py matches INFRA partition output (ISO ts, string bank codes); baselines + evaluator tested on synthetic 4-bank partition; VM watcher armed; blocked on data + venv | 13:15 | baselines on VM → table here |
 | FEDERATION | not started (no code in tree at 12:50) | | coordinator + bank MVP on `features.make_synthetic()` rows; use real `egress.send` (shipped) |
-| REDTEAM | in progress (redteam.py 419 lines, uncommitted) | 12:50 (seen by MASTER) | commit; `--selftest` on synthetic logreg; wait for dp-off/dp-on models |
+| REDTEAM | code done, waiting on data + models | 13:25 | `fedaml.redteam` runs on the VM (s390x) with all three attacks: loss-threshold, shadow (bank 2), ART 1.20.1 black-box; `--selftest` 2.5 s on synthetic shards; `docs/REDTEAM.md` written with `{{RT_*}}` placeholders. Next: real shards (`data/banks`, `global_test.csv`) → selftest on real data → FEDERATION's `global_final_dpoff.json` / `global_final_dpon.json` |
 | AUDIT | egress.py + tests + try_leak.py pushed (80179a8) | 12:50 | `summarize(logs_dir)`; dashboard v1 (bind 0.0.0.0, port 8050, `/api/state`) |
 | GENAI | in progress (fedaml/llm scaffold → llama.cpp HTTP client) | 12:50 (seen by MASTER) | runtime verdict in STATUS (tokens/s or 'template'); `sar.py --engine template` first |
 
