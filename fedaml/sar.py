@@ -21,7 +21,7 @@ import time
 
 from fedaml.llm.client import LlamaClient, LLMUnavailable
 from fedaml.llm.facts import extract_facts, fill_placeholders, glossary, template_sections
-from fedaml.llm.narrate import SYSTEM_PROMPT, build_user_prompt, parse_response
+from fedaml.llm.narrate import SYSTEM_PROMPT, build_user_prompt, echoes_input, parse_response
 
 log = logging.getLogger("fedaml.sar")
 
@@ -67,6 +67,11 @@ def llm_sections(alert: dict, facts: dict[str, str], *, max_tokens: int, tempera
     finally:
         client.stop()
     sections = parse_response(res.text)
+    meta: dict = {}
+    if echoes_input(sections["pattern_indicators"], alert):
+        # a small model often copies the indicator lines back; use the template bullets (with numbers) instead
+        sections["pattern_indicators"] = template_sections(alert, facts)["pattern_indicators"]
+        meta["indicators_source"] = "template (LLM echoed the input lines)"
     filled = {k: fill_placeholders(v, facts) for k, v in sections.items()}
     leftover = sorted({m for v in filled.values() for m in re.findall(r"\[[A-Z_]+\]", v)})
     if leftover:
@@ -74,8 +79,8 @@ def llm_sections(alert: dict, facts: dict[str, str], *, max_tokens: int, tempera
     bad = check_account_ids("\n".join(filled.values()), alert)
     if bad:
         raise ValueError(f"LLM output contains account-like tokens not in the alert: {bad}")
-    meta = {"model": res.model, "seconds": round(res.seconds, 2), "completion_tokens": res.completion_tokens,
-            "prompt_tokens": res.prompt_tokens, "tokens_per_second": round(res.tokens_per_second, 2)}
+    meta.update(model=res.model, seconds=round(res.seconds, 2), completion_tokens=res.completion_tokens,
+                prompt_tokens=res.prompt_tokens, tokens_per_second=round(res.tokens_per_second, 2))
     return filled, meta
 
 
@@ -109,7 +114,9 @@ def render(alert: dict, facts: dict[str, str], sections: dict[str, str], footer:
     for r in alert["rows"]:
         chain.append(f"| {r.get('ts')} | {r['from_bank']} | {r['from_acct']} | {r['to_bank']} | {r['to_acct']} | "
                      f"{(r.get('amt_paid') or 0):,.2f} | {r.get('cur_paid')} | {r.get('fmt')} | {r.get('role', '')} |")
-    gen_note = (f"LLM engine ({footer['model']}), {footer['seconds']} s, {footer['completion_tokens']} tokens"
+    gen_note = (f"LLM engine ({os.path.basename(str(footer['model']))}), {footer['seconds']} s, "
+                f"{footer['completion_tokens']} tokens"
+                + (f"; pattern indicators from the {footer['indicators_source']}" if footer.get("indicators_source") else "")
                 if footer["engine"] == "llm" else
                 f"template engine" + (f" (fallback: {footer['fallback_reason']})" if footer.get("fallback_reason") else ""))
     return f"""# Suspicious Activity Report — alert {facts['ALERT_ID']}

@@ -19,9 +19,9 @@ SYSTEM_PROMPT = (
     "Suspicious Activity Report. Write in formal, neutral English. Never state that a crime "
     "occurred; describe indicators and recommend review. You must not invent any account number, "
     "amount, date, bank name or statistic: refer to them ONLY with the placeholder tokens given in "
-    "square brackets, exactly as written. The cross-bank model ranked this transaction among the most "
-    "suspicious in the sample, so never describe the score as low. Do not repeat sentences. Output must be "
-    "a single JSON object and nothing else."
+    "square brackets, exactly as written. Treat the transaction as high-risk: the cross-bank model ranked it "
+    "among the most suspicious in the sample, and your recommendation is always to review it. Do not repeat "
+    "sentences. Output must be a single JSON object and nothing else."
 )
 
 PLACEHOLDER_HELP = (
@@ -57,6 +57,20 @@ def build_user_prompt(alert: dict) -> str:
         ' "recommended_action": "<2-3 sentences of concrete next steps for the compliance officer at bank '
         '[SENDER_BANK], mentioning account [SENDER] and the other institutions [BANKS]>"}'
     )
+
+
+def echoes_input(bullets: str, alert: dict) -> bool:
+    """True when most LLM indicator bullets are verbatim copies of the prompt's indicator lines."""
+    inputs = {_norm(x) for x in indicator_lines(alert)}
+    outs = [_norm(b.lstrip("- ").strip()) for b in bullets.splitlines() if b.strip()]
+    if not outs:
+        return True
+    copied = sum(1 for o in outs if o in inputs or any(o and (o in i or i in o) for i in inputs))
+    return copied >= max(1, (len(outs) + 1) // 2)
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"\W+", " ", s).strip().lower()
 
 
 def parse_response(text: str) -> dict[str, str]:
