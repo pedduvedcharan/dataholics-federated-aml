@@ -306,8 +306,11 @@ function renderPrivacy(s) {
       <dt>Clip norm (L2)</dt><dd>${esc(dp.clip_norm ?? '—')} <span style="color:var(--muted)">per update, applied inside the bank</span></dd>
       <dt>δ</dt><dd>${esc(dp.delta ?? '—')}</dd>
       <dt>Rounds composed</dt><dd>${esc(st.round ?? '—')} of ${esc(st.total_rounds ?? '—')}</dd>
+      ${dp.mode || dp.noise_added_by ? `<dt>DP mode</dt><dd>${esc(dp.mode || '')}${dp.noise_added_by ? ' · noise added by ' + esc(dp.noise_added_by) : ''}</dd>` : ''}
     </dl>
-    <p style="color:var(--muted); font-size:12px; margin:10px 0 0">Each bank clips its weight delta to the L2 norm above and adds Gaussian noise before it reaches the egress door, so the coordinator never sees an exact update. ε grows with every round; the meter turns amber at 50% and red at 80% of the budget.</p>`;
+    <p style="color:var(--muted); font-size:12px; margin:10px 0 0">${dp.noise_added_by === 'coordinator'
+      ? 'Each bank clips its weight delta to the L2 norm above before it reaches the egress door; the coordinator adds calibrated Gaussian noise to every accepted update before averaging (central DP), so the published global model never reflects an exact update.'
+      : 'Each bank clips its weight delta to the L2 norm above and adds Gaussian noise before it reaches the egress door, so the coordinator never sees an exact update.'} ε grows with every round; the meter turns amber at 50% and red at 80% of the budget.${dp.epsilon_note ? ' ' + esc(dp.epsilon_note) : ''}</p>`;
 }
 
 /* ---------- 4. rogue bank ---------- */
@@ -397,7 +400,7 @@ function renderEvidence(s) {
     ['1 · Regulator view', `${s.logs_dir || 'logs/egress'}/bank_<id>.jsonl`, 'kind=model_update → messages, bytes, params_shared, rows_shared; kind=blocked → blocked attempts; tail = last 10 lines by ts', (f['logs/egress'] && f['logs/egress'].present) ? `${f['logs/egress'].n_files} file(s)` : 'missing'],
     ['2 · Training', `${s.state_dir || 'state'}/status.json`, pooled ? `rounds[].${pooled}, rounds[].${pooled.replace('auc', 'ap')}` + (evb ? ` (pooled over eval_banks=[${evb}] test sets)` : '') + `, rounds[].per_bank_auc` + (pooled !== 'global_auc' && rounds.some(r => typeof r.global_auc === 'number') ? '; rounds[].global_auc as control' : '') : 'rounds[].global_auc, rounds[].global_ap, rounds[].per_bank_auc (global_test control; pooled key not written yet)', age('status.json')],
     ['2 · Training (reference lines)', `${s.state_dir || 'state'}/baselines.json`, 'per_bank.<id>.{logreg,rf,hgb}.pooled_auc (best per bank; .auc = own test, fallback only), centralized_logreg.auc and federated.auc (both pooled basis)', age('baselines.json')],
-    ['3 · Privacy budget', `${s.state_dir || 'state'}/status.json`, `dp.epsilon_spent, dp.sigma, dp.clip_norm, dp.delta, round/total_rounds · budget ${s.eps_budget} is a dashboard setting (--eps-budget), not a measurement`, age('status.json')],
+    ['3 · Privacy budget', `${s.state_dir || 'state'}/status.json`, `dp.epsilon_spent, dp.sigma, dp.clip_norm, dp.delta, dp.mode, dp.noise_added_by, dp.epsilon_note, round/total_rounds · budget ${s.eps_budget} is a dashboard setting (--eps-budget), not a measurement`, age('status.json')],
     ['4 · Rogue bank', `${s.state_dir || 'state'}/${rogueSrc}`, 'rounds[].accepted, rounds[].excluded[].{bank_id,reason,score}' + (s.status_rogue_off ? '; final global_auc of status_rogue_off.json vs status_rogue_on.json' : ''), age(rogueSrc)],
     ['5 · Red team', `${s.state_dir || 'state'}/redteam.json`, `attack, target (headline = ${rt.target || 'laundering'} rows), dp_off/dp_on.{attack_acc,attack_auc,n,verdict}, model_auc_off/on; footnote from detail.dp_off|dp_on.targets.<other>.result`, age('redteam.json')],
     ['6 · Footprint', `${s.state_dir || 'state'}/footprint.json`, 'per_container_peak_rss_mb, seconds_per_round, total_runtime_s, cpu_count, arch', age('footprint.json')],
