@@ -4,8 +4,8 @@ IBM Z Datathon 2026 · Theme: **AI Secured: Innovation Without Exposure** · Tea
 
 > What the Dutch banks had to shut down, built so it would have been legal.
 
-Status: under construction during the event (Oct 17–18, 2026). Live board: `STATUS.md`. Every number in this file is
-either a `{{PLACEHOLDER}}` or traceable to a file in `state/` or `logs/` produced on the LinuxONE VM.
+Status: under construction during the event (Oct 17–18, 2026). Live board: `STATUS.md`. Every number in this file is traceable to a file in `state/` or `logs/` produced on the LinuxONE VM
+(integration run of Oct 17 2026, 21:10–21:13 UTC; models sha256 `f12fcda7…` DP off, `16ef90c0…` DP on).
 
 ## 1. Problem
 
