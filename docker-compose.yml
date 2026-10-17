@@ -1,0 +1,152 @@
+# Dataholics — cross-bank AML via federated learning — IBM Z Datathon 2026
+# One image ("fedaml", built from ./Dockerfile by INFRA), one service per role.
+# Default profile:  docker compose up            -> coordinator, bank1..bank4, rogue, dashboard
+# Tools profile:    docker compose run --rm attacker | genai | baselines | tryleak
+# Toggles (env, all optional):  ROUNDS DP SIGMA CLIP DEFENSE EPOCHS ROGUE_ATTACK ROGUE_FACTOR SEED
+#   e.g.  DP=off DEFENSE=off docker compose up           (the "unprotected" run)
+#         DP=on  DEFENSE=on  docker compose up           (the demo run; defaults)
+# Volumes: ./data (read-only shards), ./state (models + status JSON), ./logs (egress audit).
+# Nothing is published to the internet: host ports bind 127.0.0.1 only; reach via `ssh -L`.
+
+name: fedaml
+
+x-common: &common
+  image: fedaml
+  build:
+    context: .
+    dockerfile: Dockerfile          # INFRA owns the Dockerfile (ubuntu:24.04 + apt python3-*)
+  working_dir: /app
+  environment:
+    PYTHONPATH: /app
+    PYTHONUNBUFFERED: "1"
+    SEED: ${SEED:-42}
+  volumes:
+    - ./data:/app/data:ro
+    - ./state:/app/state
+    - ./logs:/app/logs
+  restart: "no"
+  init: true
+  # TODO(MASTER, after INFRA footprint run): add mem_limit per service if docker stats shows pressure (8 GB box).
+
+x-bank: &bank
+  <<: *common
+  depends_on:
+    coordinator:
+      condition: service_healthy
+  # Banks: data stays in the container; only clipped+noised deltas leave through fedaml.egress.send.
+  # TODO(FEDERATION): confirm bank.py reads DP/clip settings from GET /config (not CLI) so one toggle rules all.
+
+services:
+
+  coordinator:
+    <<: *common
+    container_name: coordinator
+    command: >
+      python3 -m fedaml.coordinator
+      --rounds ${ROUNDS:-10}
+      --banks ${BANKS:-1,2,3,4,5}
+      --dp ${DP:-on}
+      --sigma ${SIGMA:-0.8}
+      --clip ${CLIP:-1.0}
+      --defense ${DEFENSE:-on}
+      --seed ${SEED:-42}
+    # TODO(FEDERATION): coordinator must bind 0.0.0.0:8000 inside the container (add --host, default 0.0.0.0).
+    # TODO(FEDERATION): --banks for a no-rogue run is 1,2,3,4 (then also scale the rogue service to 0:
+    #                   `docker compose up --scale rogue=0`). Confirm --seed is accepted or drop it here.
+    ports:
+      - "127.0.0.1:8000:8000"       # host-only, for curl debugging through an SSH tunnel
+    healthcheck:
+      # No curl in the image; use stdlib. Status endpoint per CONTRACTS §4.
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/status', timeout=3).status==200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+
+  bank1:
+    <<: *bank
+    container_name: bank1
+    command: python3 -m fedaml.bank --bank-id 1 --coordinator http://coordinator:8000 --epochs ${EPOCHS:-1} --seed ${SEED:-42}
+
+  bank2:
+    <<: *bank
+    container_name: bank2
+    command: python3 -m fedaml.bank --bank-id 2 --coordinator http://coordinator:8000 --epochs ${EPOCHS:-1} --seed ${SEED:-42}
+
+  bank3:
+    <<: *bank
+    container_name: bank3
+    command: python3 -m fedaml.bank --bank-id 3 --coordinator http://coordinator:8000 --epochs ${EPOCHS:-1} --seed ${SEED:-42}
+
+  bank4:
+    <<: *bank
+    container_name: bank4
+    command: python3 -m fedaml.bank --bank-id 4 --coordinator http://coordinator:8000 --epochs ${EPOCHS:-1} --seed ${SEED:-42}
+
+  rogue:
+    <<: *bank
+    container_name: rogue
+    # Addition #4: the 5th bank poisons its updates to hide its own laundering. Synthetic attack; say so in the demo.
+    command: >
+      python3 -m fedaml.rogue --bank-id 5 --coordinator http://coordinator:8000
+      --attack ${ROGUE_ATTACK:-scale} --factor ${ROGUE_FACTOR:--20}
+      --epochs ${EPOCHS:-1} --seed ${SEED:-42}
+    # TODO(FEDERATION): confirm rogue.py accepts --epochs/--seed, or remove them here.
+
+  dashboard:
+    <<: *common
+    container_name: dashboard
+    command: python3 -m fedaml.dashboard --port 8050
+    # TODO(AUDIT): dashboard must bind 0.0.0.0 inside the container; host side is 127.0.0.1 below.
+    #              Reach from the Mac: ssh -L 8050:localhost:8050 dataholics  ->  http://localhost:8050
+    ports:
+      - "127.0.0.1:8050:8050"
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data:ro
+      - ./state:/app/state:ro
+      - ./logs:/app/logs:ro
+
+  # ---------------------------------------------------------------- tools profile (run on demand)
+
+  attacker:
+    <<: *common
+    container_name: attacker
+    profiles: ["tools"]
+    # Membership-inference red team: DP off vs DP on (CONTRACTS §7). Must finish < 2 min on the VM.
+    command: >
+      python3 -m fedaml.redteam
+      --model-off ${MODEL_OFF:-state/global_final_dpoff.json}
+      --model-on  ${MODEL_ON:-state/global_final_dpon.json}
+      --seed ${SEED:-42}
+    # TODO(REDTEAM): confirm --seed is accepted or remove.
+
+  genai:
+    <<: *common
+    container_name: genai
+    profiles: ["tools"]
+    # SAR writer. Usage: ALERT_ID=<id> docker compose run --rm genai   (SAR_ENGINE=llm|template, default template)
+    command: python3 -m fedaml.sar --alert-id ${ALERT_ID:?set ALERT_ID=<alert id from state/alerts.json>} --engine ${SAR_ENGINE:-template}
+    # TODO(GENAI): if the LLM runtime works on s390x, add the weights volume here (e.g. ./models:/app/models:ro),
+    #              set SAR_ENGINE default to llm, and give MASTER the model name + RAM so it is not run during training.
+
+  baselines:
+    <<: *common
+    container_name: baselines
+    profiles: ["tools"]
+    # Per-bank LogReg / RF / HGB comparison + centralized ceiling -> state/baselines.json (MODELS)
+    command: python3 -m fedaml.baselines --banks ${BANKS_BASELINE:-1,2,3,4} --seed ${SEED:-42}
+    # TODO(MODELS): confirm --seed is accepted or remove.
+
+  tryleak:
+    <<: *common
+    container_name: tryleak
+    profiles: ["tools"]
+    # Demo hook: tries to push 5 raw rows through egress.send; must be BLOCKED and logged (AUDIT).
+    command: python3 scripts/try_leak.py --coordinator http://coordinator:8000 --bank-id 1
+    volumes:
+      - ./data:/app/data:ro
+      - ./state:/app/state
+      - ./logs:/app/logs
+      - ./scripts:/app/scripts:ro
+    # TODO(AUDIT): confirm try_leak.py flags.
