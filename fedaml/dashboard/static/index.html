@@ -85,6 +85,9 @@
   .verdict.warn { background: rgba(250,178,25,0.12); border: 1px solid var(--warn); }
   .hbar { display: inline-block; height: 10px; background: var(--s1); border-radius: 0 3px 3px 0; vertical-align: middle; margin-right: 6px; }
   .foot { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; }
+  body.solo header, body.solo #banner-keep-hidden { display: none; }
+  body.solo .grid > .panel:not(.solo-on), body.solo footer.panel:not(.solo-on) { display: none; }
+  body.solo .panel.solo-on { grid-column: 1 / -1; }
   @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } .reg { grid-template-columns: 1fr 1fr; } .foot { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -123,7 +126,7 @@
   </section>
 
   <section class="panel" id="p-priv">
-    <h2>3 · Privacy — ε spent <span class="note">approximate, update-level Gaussian composition over rounds</span></h2>
+    <h2>3 · Privacy — <span style="text-transform:none">ε</span> spent <span class="note">approximate, update-level Gaussian composition over rounds</span></h2>
     <div id="priv-body" class="waiting">waiting for status.json</div>
   </section>
 
@@ -205,15 +208,22 @@ const endLabel = {  // direct-label the last point of selected datasets
   afterDatasetsDraw(chart) {
     const { ctx } = chart;
     ctx.save(); ctx.font = '600 11px system-ui, sans-serif'; ctx.textBaseline = 'middle';
+    const used = [];   // y positions already labelled; skip a label that would overlap (tooltip + legend still carry it)
     chart.data.datasets.forEach((ds, i) => {
       if (!ds.endLabel) return;
       const meta = chart.getDatasetMeta(i); if (!meta.data.length || meta.hidden) return;
-      const pt = meta.data[meta.data.length - 1];
-      ctx.fillStyle = ds.borderColor; ctx.fillText(ds.endLabel, pt.x + 6, pt.y + (ds.endOffset || 0));
+      const pt = meta.data[meta.data.length - 1]; const y = pt.y + (ds.endOffset || 0);
+      if (used.some(u => Math.abs(u - y) < 13)) return;
+      used.push(y); ctx.fillStyle = ds.borderColor; ctx.fillText(ds.endLabel, pt.x + 6, y);
     });
     ctx.restore();
   }
 };
+function yMin(datasets) {   // zoom the y-axis to the data (floor 0.5) so lines near 0.98 do not stack into one
+  const v = datasets.flatMap(d => d.data).filter(x => typeof x === 'number');
+  if (!v.length) return 0.5;
+  return Math.max(0.5, Math.floor((Math.min(...v) - 0.02) * 20) / 20);
+}
 function bestLocal(bank) {  // best single-model AUC for a bank from baselines.json, pooled basis (own-test .auc as fallback)
   let best = null;
   for (const [m, v] of Object.entries(bank || {})) {
@@ -236,7 +246,9 @@ function renderTraining(s) {
   const evalTxt = evalBanks ? `banks ${evalBanks.join(',')}` : 'banks';
   const mainLabel = pooledKey ? `Global model · AUC pooled over ${evalTxt}' test sets` : 'Global model AUC (global_test, control only)';
   const hasControl = pooledKey && pooledKey !== 'global_auc' && rounds.some(r => typeof r.global_auc === 'number');
-  const notLearnable = b => !!(evalBanks && !evalBanks.includes(String(b)));
+  const rogueIds = new Set(); rounds.forEach(r => (r.excluded || []).forEach(e => rogueIds.add(String(e.bank_id))));
+  const notLearnable = b => !!(evalBanks && !evalBanks.includes(String(b)) && !rogueIds.has(String(b)));
+  const isRogue = b => rogueIds.has(String(b));
   const n = Math.max(labels.length, 2);
   const flat = v => Array(n).fill(v);
   const xs = labels.length >= 2 ? labels : (labels.length === 1 ? [labels[0], ''] : ['r1', 'r2']);
@@ -260,7 +272,7 @@ function renderTraining(s) {
       datasets.push({ label: 'Federated final (baselines.json)', data: flat(fv), borderColor: css('--s3'), borderWidth: 1.5, pointRadius: 0, borderDash: [2, 3] });
       legend.push({ c: css('--s3'), t: 'federated final model as scored by MODELS ' + f3(fv) });
     }
-    const locals = Object.entries(bl.per_bank || {}).filter(([b]) => !notLearnable(b)).map(([b, m]) => [b, bestLocal(m)]).filter(x => x[1]);
+    const locals = Object.entries(bl.per_bank || {}).filter(([b]) => !notLearnable(b) && !isRogue(b) && (!evalBanks || evalBanks.includes(String(b)))).map(([b, m]) => [b, bestLocal(m)]).filter(x => x[1]);
     locals.forEach(([b, v], i) => datasets.push({ label: `Bank ${b} best local (${v.model}, ${v.basis})`, data: flat(v.auc), borderColor: css('--muted'),
       borderWidth: 1, pointRadius: 0, endLabel: i === 0 ? 'one bank' : '', endOffset: 0 }));
     if (locals.length) legend.push({ c: css('--muted'), t: `each bank alone (${locals[0][1].basis} basis), best of logreg/rf/hgb: ` + locals.map(([b, v]) => `b${b} ${f3(v.auc)}`).join(' · ') });
@@ -275,15 +287,16 @@ function renderTraining(s) {
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${f3(c.parsed.y)}` } } },
       scales: { x: { grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') } },
-                y: { min: 0.5, max: 1.0, grid: { color: css('--grid') }, ticks: { color: css('--muted'), stepSize: 0.1 }, border: { color: css('--axis') },
+                y: { min: yMin(datasets), max: 1.0, grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') },
                      title: { display: true, text: pooledKey ? `ROC AUC, pooled over ${evalTxt}` : 'ROC AUC, global_test (control)', color: css('--muted'), font: { size: 11 } } } } } });
-  } else { aucChart.data.labels = xs; aucChart.data.datasets = datasets; aucChart.options.scales.y.title.text = pooledKey ? `ROC AUC, pooled over ${evalTxt}` : 'ROC AUC, global_test (control)'; aucChart.update('none'); }
+  } else { aucChart.options.scales.y.min = yMin(datasets); aucChart.data.labels = xs; aucChart.data.datasets = datasets; aucChart.options.scales.y.title.text = pooledKey ? `ROC AUC, pooled over ${evalTxt}` : 'ROC AUC, global_test (control)'; aucChart.update('none'); }
 
   if (rounds.length) {
     const banks = Object.keys(rounds[rounds.length - 1].per_bank_auc || {});
     const aucHdr = pooledKey ? `pooled AUC (${evalTxt})` : 'AUC (global_test, control)';
-    const note = banks.some(notLearnable) ? `<div style="color:var(--muted); font-size:11px; margin:4px 0 2px">* bank ${banks.filter(notLearnable).join(', ')}: AUC ≈ 0.5 is real, not a bug — its laundering is not learnable with per-row features (see docs); excluded from the pooled score (eval_banks = ${evalBanks.join(',')}).</div>` : '';
-    $('train-table').innerHTML = note + `<table><tr><th>round</th><th class="num">${aucHdr}</th><th class="num">AP</th>${hasControl ? '<th class="num">global_test (control)</th>' : ''}${banks.map(b => `<th class="num">b${esc(b)} AUC${notLearnable(b) ? ' *' : ''}</th>`).join('')}</tr>` +
+    const nl = banks.filter(notLearnable), rg = banks.filter(isRogue);
+    const note = (nl.length || rg.length) ? `<div style="color:var(--muted); font-size:11px; margin:4px 0 2px">${nl.length ? `* bank ${nl.join(', ')}: AUC ≈ 0.5 is real, not a bug — its laundering is not learnable with per-row features (see docs); excluded from the pooled score (eval_banks = ${evalBanks.join(',')}). ` : ''}${rg.length ? `† bank ${rg.join(', ')}: rogue, its update was excluded by the defense (score shown is its own poisoned model).` : ''}</div>` : '';
+    $('train-table').innerHTML = note + `<table><tr><th>round</th><th class="num">${aucHdr}</th><th class="num">AP</th>${hasControl ? '<th class="num">global_test (control)</th>' : ''}${banks.map(b => `<th class="num">b${esc(b)} AUC${notLearnable(b) ? ' *' : isRogue(b) ? ' †' : ''}</th>`).join('')}</tr>` +
       rounds.slice().reverse().map(r => `<tr><td>${esc(r.round)}</td><td class="num">${f3(pooledKey ? r[pooledKey] : r.global_auc)}</td><td class="num">${f3(pooledKey ? r[pooledApKey] : r.global_ap)}</td>${hasControl ? `<td class="num">${f3(r.global_auc)}</td>` : ''}${banks.map(b => `<td class="num">${f3((r.per_bank_auc || {})[b])}</td>`).join('')}</tr>`).join('') + '</table>';
   } else $('train-table').innerHTML = '<div class="waiting">no rounds completed yet</div>';
 }
@@ -313,9 +326,9 @@ function renderPrivacy(s) {
       <dt>Clip norm (L2)</dt><dd>${esc(dp.clip_norm ?? '—')} <span style="color:var(--muted)">per update, applied inside the bank</span></dd>
       <dt>δ</dt><dd>${esc(dp.delta ?? '—')}</dd>
       <dt>Rounds composed</dt><dd>${esc(st.round ?? '—')} of ${esc(st.total_rounds ?? '—')}</dd>
-      ${dp.mode || dp.noise_added_by ? `<dt>DP mode</dt><dd>${esc(dp.mode || '')}${dp.noise_added_by ? ' · noise added by ' + esc(dp.noise_added_by) : ''}</dd>` : ''}
+      ${dp.enabled && (dp.mode || dp.noise_added_by) ? `<dt>DP mode</dt><dd>${esc(dp.mode || '')}${dp.noise_added_by ? ' · noise added by ' + esc(dp.noise_added_by) : ''}</dd>` : ''}
     </dl>
-    <p style="color:var(--muted); font-size:12px; margin:10px 0 0">Approximate, update-level Gaussian composition over rounds; the coordinator adds the noise (DP-FedAvg). Per-record guarantees would need DP-SGD inside each bank (stretch). Each bank clips its weight delta to the L2 norm above before it reaches the egress door${dp.noise_added_by === 'coordinator' ? '; the coordinator adds calibrated Gaussian noise to every accepted update before averaging' : '; noise is added before egress'}. ε grows with every round; the bar fills toward the run's planned total.${dp.epsilon_note ? ' Coordinator note: ' + esc(dp.epsilon_note) : ''}</p>`;
+    <p style="color:var(--muted); font-size:12px; margin:10px 0 0">${!dp.enabled ? 'This run has DP off: updates are clipped but not noised, so no ε is spent. It exists as the unprotected comparison for the red team. ' : ''}Approximate, update-level Gaussian composition over rounds; the coordinator adds the noise (DP-FedAvg). Per-record guarantees would need DP-SGD inside each bank (stretch). Each bank clips its weight delta to the L2 norm above before it reaches the egress door${dp.noise_added_by === 'coordinator' ? '; the coordinator adds calibrated Gaussian noise to every accepted update before averaging' : '; noise is added before egress'}. ε grows with every round; the bar fills toward the run's planned total.${dp.epsilon_note ? ' Coordinator note: ' + esc(dp.epsilon_note) : ''}</p>`;
 }
 
 /* ---------- 4. rogue bank ---------- */
@@ -437,6 +450,8 @@ async function tick() {
     $('pill-live').className = 'pill offline'; $('pill-live').innerHTML = '<span class="dot"></span>offline · ' + esc(e.message);
   }
 }
+const soloId = new URLSearchParams(location.search).get('solo');   // ?solo=p-train renders one panel full width (screenshots)
+if (soloId && document.getElementById(soloId)) { document.body.classList.add('solo'); document.getElementById(soloId).classList.add('solo-on'); }
 let deepLinked = false;   // /#p-train etc. frames one panel at the top (used for the 1280x720 screenshots)
 async function firstTick() { await tick(); if (!deepLinked && location.hash) { const el = document.querySelector(location.hash); if (el) { el.scrollIntoView({ block: 'start' }); window.scrollBy(0, -8); } deepLinked = true; } }
 firstTick(); setInterval(tick, 3000);
