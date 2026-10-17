@@ -87,11 +87,13 @@ def losses(model: dict, pop: Population, names: list[str]) -> tuple[np.ndarray, 
 
 def sgd_logreg(y: np.ndarray, seed: int) -> SGDClassifier:
     """SGD logistic regression with 'balanced' class weights computed up front
-    (partial_fit rejects class_weight='balanced'; CONTRACTS section 4 recipe)."""
+    (partial_fit rejects class_weight='balanced') and a constant 1e-3 learning
+    rate: the default 'optimal' schedule diverges on the raw features
+    (|coef| in the hundreds, measured Oct 17 on banks 1-5)."""
     classes = np.array([0, 1])
     w = compute_class_weight("balanced", classes=classes, y=y) if len(np.unique(y)) > 1 else np.ones(2)
     return SGDClassifier(loss="log_loss", class_weight={0: float(w[0]), 1: float(w[1])},
-                         random_state=seed, warm_start=True)
+                         learning_rate="constant", eta0=1e-3, random_state=seed, warm_start=True)
 
 
 # ------------------------------------------------------------------------- attacks
@@ -115,9 +117,22 @@ def _best_threshold(loss: np.ndarray, is_mem: np.ndarray) -> float:
     return float((l_sorted[best] + l_sorted[best + 1]) / 2)
 
 
-def _score(p_mem: np.ndarray, is_mem: np.ndarray, **extra) -> dict:
+def _bootstrap_auc_ci(p: np.ndarray, y: np.ndarray, seed: int, reps: int = 300, level: float = 0.90) -> list[float]:
+    """Percentile bootstrap CI for the attack AUC (small laundering populations need it)."""
+    rng = np.random.default_rng(seed)
+    aucs = []
+    for _ in range(reps):
+        i = rng.integers(0, len(y), len(y))
+        if len(np.unique(y[i])) == 2:
+            aucs.append(roc_auc_score(y[i], p[i]))
+    lo, hi = np.percentile(aucs, [100 * (1 - level) / 2, 100 * (1 + level) / 2])
+    return [float(lo), float(hi)]
+
+
+def _score(p_mem: np.ndarray, is_mem: np.ndarray, seed: int = 42, **extra) -> dict:
     return {"attack_acc": float(np.mean((p_mem >= 0.5) == (is_mem == 1))),
-            "attack_auc": float(roc_auc_score(is_mem, p_mem)), "n": int(len(is_mem)), **extra}
+            "attack_auc": float(roc_auc_score(is_mem, p_mem)),
+            "attack_auc_ci90": _bootstrap_auc_ci(p_mem, is_mem, seed), "n": int(len(is_mem)), **extra}
 
 
 def loss_threshold_attack(loss_mem: np.ndarray, loss_non: np.ndarray, seed: int,
@@ -133,7 +148,9 @@ def loss_threshold_attack(loss_mem: np.ndarray, loss_non: np.ndarray, seed: int,
     t = _best_threshold(np.r_[loss_mem[cm], loss_non[cn]], np.r_[np.ones(len(cm)), np.zeros(len(cn))])
     loss_eval = np.r_[loss_mem[em], loss_non[en]]
     is_mem = np.r_[np.ones(len(em)), np.zeros(len(en))]
-    return _score((loss_eval < t).astype(float), is_mem, threshold=t)
+    res = _score(-loss_eval, is_mem, seed, threshold=t)
+    res["attack_acc"] = float(np.mean((loss_eval < t) == (is_mem == 1)))   # rule: member iff loss < t
+    return res
 
 
 def shadow_attack(loss_mem: np.ndarray, loss_non: np.ndarray, target: str, data: AttackData,
@@ -159,7 +176,7 @@ def shadow_attack(loss_mem: np.ndarray, loss_non: np.ndarray, target: str, data:
     loss_eval = np.r_[loss_mem, loss_non]
     is_mem = np.r_[np.ones(len(loss_mem)), np.zeros(len(loss_non))]
     p_mem = clf.predict_proba(np.log1p(loss_eval).reshape(-1, 1))[:, 1]
-    return _score(p_mem, is_mem, shadow_epochs=epochs)
+    return _score(p_mem, is_mem, seed, shadow_epochs=epochs)
 
 
 def art_attack(model: dict, pop: Population, names: list[str], seed: int, calib_frac: float = 0.2) -> dict:
@@ -189,7 +206,7 @@ def art_attack(model: dict, pop: Population, names: list[str], seed: int, calib_
     atk.fit(Xm[cm], pop.y_mem[cm], Xn[cn], pop.y_non[cn])
     p = np.r_[atk.infer(Xm[em], pop.y_mem[em], probabilities=True).ravel(),
               atk.infer(Xn[en], pop.y_non[en], probabilities=True).ravel()]
-    return _score(p, np.r_[np.ones(len(em)), np.zeros(len(en))])
+    return _score(p, np.r_[np.ones(len(em)), np.zeros(len(en))], seed)
 
 
 # ------------------------------------------------------------------------ pipeline
@@ -266,7 +283,7 @@ def train_overfit_local(data: AttackData, epochs: int, seed: int, out: str) -> s
     write_json_atomic(out, {"round": 0, "coef": coef.tolist(), "intercept": [b],
                             "feature_names": data.feature_names,
                             "sha256": model_sha256(coef, b, data.feature_names),
-                            "accepted_banks": [data.meta["member_bank"]], "excluded_banks": [],
+                            "accepted_banks": list(data.meta["member_banks"]), "excluded_banks": [],
                             "note": f"redteam --selftest: local model, {epochs} epochs on the member sample only"})
     return out
 
@@ -277,11 +294,12 @@ FOOTNOTES = {"all": "all rows, same-bank non-members",
 
 def format_table(rows: list[tuple[str, dict]], target: str) -> str:
     """The table from the brief; the setting column names the population each row used."""
-    lines = [f"{'setting':<28}{'model AUC':>10}{'attack acc':>12}{'attack AUC':>12}   verdict"]
+    lines = [f"{'setting':<28}{'model AUC':>10}{'attack acc':>12}{'attack AUC':>12}  {'90% CI':<14} verdict"]
     for name, r in rows:
         t = r["targets"][target]["result"]
+        ci = f"[{t['attack_auc_ci90'][0]:.2f}, {t['attack_auc_ci90'][1]:.2f}]"
         lines.append(f"{name + ' / ' + target + ' rows':<28}{r['model_auc']:>10.3f}"
-                     f"{t['attack_acc']:>12.3f}{t['attack_auc']:>12.3f}   {t['verdict']}")
+                     f"{t['attack_acc']:>12.3f}{t['attack_auc']:>12.3f}  {ci:<14} {t['verdict']}")
     for o in [o for o in rows[0][1]["targets"] if o != target]:
         parts = "; ".join(f"{name}: acc {r['targets'][o]['result']['attack_acc']:.3f}, AUC "
                           f"{r['targets'][o]['result']['attack_auc']:.3f}, {r['targets'][o]['result']['verdict']}"
@@ -296,13 +314,14 @@ def build_report(off: dict, on: Optional[dict], data: AttackData, target: str, s
         if r is None:
             return None
         t = r["targets"][target]["result"]
-        return {"attack_acc": t["attack_acc"], "attack_auc": t["attack_auc"], "n": t["n"], "verdict": t["verdict"]}
+        return {"attack_acc": t["attack_acc"], "attack_auc": t["attack_auc"], "attack_auc_ci90": t["attack_auc_ci90"],
+                "n": t["n"], "verdict": t["verdict"]}
     return {"attack": off["targets"][target]["attack"], "target": target,
             "dp_off": pick(off), "dp_on": pick(on),
             "model_auc_off": off["model_auc"], "model_auc_on": on["model_auc"] if on else None,
             "model_auc_global_test_off": off.get("model_auc_global_test"),
             "model_auc_global_test_on": on.get("model_auc_global_test") if on else None,
-            "members": f"bank_{data.meta['member_bank']} train rows", "nonmembers": data.meta["nonmembers"],
+            "members": f"banks {data.meta['member_banks']} train rows", "nonmembers": data.meta["nonmembers"],
             "n_per_class": data.meta["n_per_class"], "seed": seed, "runtime_s": round(seconds, 1),
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "detail": {"dp_off": off, "dp_on": on, "data": {k: v for k, v in data.meta.items()}}}
@@ -314,8 +333,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--model-on", help="global model JSON trained with DP on")
     ap.add_argument("--data-dir", default="data")
     ap.add_argument("--out", default="state/redteam.json")
-    ap.add_argument("--member-bank", type=int, default=1)
-    ap.add_argument("--shadow-bank", type=int, default=2)
+    ap.add_argument("--member-banks", default="2,3,4",
+                    help="banks whose train rows are the members (bank 1's laundering is unlearnable, see docs)")
+    ap.add_argument("--shadow-bank", default="auto", help="bank for the shadow model; auto = first of 5,4,3,2,1 not a member")
     ap.add_argument("--target", choices=["laundering", "all"], default="laundering",
                     help="headline population for the table and redteam.json (both are always computed)")
     ap.add_argument("--n", type=int, default=20000, help="max members and non-members each")
@@ -333,8 +353,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         ap.error("--model-off is required unless --selftest")
 
     t0 = time.time()
-    data = load_attack_data(args.data_dir, args.member_bank, args.n, args.seed,
-                            None if args.attack == "loss_threshold" else args.shadow_bank)
+    members = [int(b) for b in args.member_banks.split(",")]
+    shadow = next((b for b in (5, 4, 3, 2, 1) if b not in members), None) if args.shadow_bank == "auto" else int(args.shadow_bank)
+    data = load_attack_data(args.data_dir, members, args.n, args.seed,
+                            None if args.attack == "loss_threshold" else shadow)
     target = args.target if args.target in data.pops else "all"
     rows: list[tuple[str, dict]] = []
     if args.selftest:
@@ -352,7 +374,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     off = rows[-1][1] if on is None else rows[-2][1]
     write_json_atomic(args.out, build_report(off, on, data, target, args.seed, seconds))
     print(format_table(rows, target))
-    print(f"\nattack: {off['targets'][target]['attack']} | members: bank_{args.member_bank} train | "
+    print(f"\nattack: {off['targets'][target]['attack']} | members: banks {members} train | "
           f"non-members: {data.meta['nonmembers']} | n per class: {data.meta['n_per_class']} | seed {args.seed} | "
           f"{seconds:.1f}s | wrote {args.out}")
     if seconds > 120:

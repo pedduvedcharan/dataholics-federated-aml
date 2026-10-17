@@ -3,9 +3,9 @@
 Builds exactly balanced member / non-member samples for two target
 populations, plus shadow material from a second bank:
 
-* ``laundering`` - laundering rows of bank 1's training set vs unseen
+* ``laundering`` - laundering rows of the member banks' training sets vs unseen
                    laundering rows (the customers a leak actually hurts)
-* ``all``        - any row of bank 1's training set vs any unseen row
+* ``all``        - any row of the member banks' training sets vs any unseen row
 * ``laundering@global_test`` - footnote: non-members from the mixed-bank
                    hold-out instead, to expose distribution shift
 
@@ -103,39 +103,51 @@ def _populations(X_m, y_m, X_p, y_p, pool_mask: np.ndarray, n: int, rng) -> dict
     return pops
 
 
-def load_attack_data(data_dir: str, member_bank: int, n: int, seed: int,
-                     shadow_bank: Optional[int] = 2) -> AttackData:
+def _bank_frames(d: Path, bank: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.Series]:
+    """One bank's train/test, featurised jointly; also train-alone features and train timestamps."""
+    bdir = d / "banks" / f"bank_{bank}"
+    train, test = _read(bdir / "train.csv"), _read(bdir / "test.csv")
+    X_both, _ = featurize(pd.concat([train, test], ignore_index=True))
+    X_tr_alone, _ = featurize(train)      # exactly what the bank fed its local training
+    return (X_both[: len(train)], _labels(train), X_both[len(train):], _labels(test), X_tr_alone, train["ts"])
+
+
+def load_attack_data(data_dir: str, member_banks: list[int], n: int, seed: int,
+                     shadow_bank: Optional[int] = None) -> AttackData:
     """Assemble attack data.
 
-    Members come from ``banks/bank_<member_bank>/train.csv``.  Primary
-    non-members are the same bank's later ``test.csv`` rows (same customers'
-    bank, later time, featurised together with train so account aggregates are
+    Members come from the member banks' ``train.csv`` files.  Primary
+    non-members are the same banks' later ``test.csv`` rows (same banks, later
+    time, featurised together with train so account aggregates are
     consistent).  When ``global_test.csv`` exists, a second laundering-row
     population with non-members from the mixed-bank hold-out dated after the
     training window is built as the distribution-shift footnote
-    (``"laundering@global_test"``).  Model AUC is measured on the bank's test
-    file (MASTER decision Oct 17) and, when present, on global_test too.
+    (``"laundering@global_test"``).  Model AUC is measured on the member
+    banks' pooled test files (CONTRACTS §4 pooled per-bank evaluation) and,
+    when present, on global_test too.
     """
     d = Path(data_dir)
     rng = np.random.default_rng(seed)
-    bdir = d / "banks" / f"bank_{member_bank}"
-    train, btest = _read(bdir / "train.csv"), _read(bdir / "test.csv")
-    X_both, names = featurize(pd.concat([train, btest], ignore_index=True))
-    X_tr, X_bt = X_both[: len(train)], X_both[len(train):]
-    y_tr, y_bt = _labels(train), _labels(btest)
-    pops = _populations(X_tr, y_tr, X_bt, y_bt, np.ones(len(btest), dtype=bool), n, rng)
-    meta = {"member_bank": member_bank, "nonmembers": f"bank_{member_bank} test.csv (same bank, later time)",
-            "train_rows": int(len(train)), "train_laundering_rows": int((y_tr == 1).sum()),
-            "test_rows": int(len(btest))}
-    data = AttackData(names, pops, X_bt, y_bt, meta=meta)
+    parts = [_bank_frames(d, b) for b in member_banks]
+    X_tr = np.vstack([p[0] for p in parts]); y_tr = np.concatenate([p[1] for p in parts])
+    X_te = np.vstack([p[2] for p in parts]); y_te = np.concatenate([p[3] for p in parts])
+    X_tr_alone = np.vstack([p[4] for p in parts])
+    names = featurize(pd.DataFrame(columns=["ts", "from_bank", "from_acct", "to_bank", "to_acct", "amt_recv",
+                                            "cur_recv", "amt_paid", "cur_paid", "fmt", "is_laundering"]))[1]
+    pops = _populations(X_tr, y_tr, X_te, y_te, np.ones(len(y_te), dtype=bool), n, rng)
+    meta = {"member_banks": list(member_banks),
+            "nonmembers": f"banks {member_banks} test.csv (same banks, later time)",
+            "train_rows": int(len(y_tr)), "train_laundering_rows": int((y_tr == 1).sum()),
+            "test_rows": int(len(y_te)), "test_laundering_rows": int((y_te == 1).sum())}
+    data = AttackData(names, pops, X_te, y_te, meta=meta)
 
     gpath = d / "global_test.csv"
     if gpath.exists():
         gtest = _read(gpath)
         X_g, _ = featurize(gtest)
         y_g = _labels(gtest)
-        X_tr_alone, _ = featurize(train)      # members as the bank featurised them for training
-        mask = _after_window(gtest, train)
+        train_ts = pd.DataFrame({"ts": pd.concat([p[5] for p in parts], ignore_index=True)})
+        mask = _after_window(gtest, train_ts)
         pos_m, pos_p = np.flatnonzero(y_tr == 1), np.flatnonzero((y_g == 1) & mask)
         if len(pos_m) >= 20 and len(pos_p) >= 20:
             pops["laundering@global_test"] = _balanced(X_tr_alone, y_tr, X_g, y_g, pos_m, pos_p, n, rng)
@@ -148,12 +160,9 @@ def load_attack_data(data_dir: str, member_bank: int, n: int, seed: int,
     if shadow_bank is not None:
         sdir = d / "banks" / f"bank_{shadow_bank}"
         if (sdir / "train.csv").exists() and (sdir / "test.csv").exists():
-            s_tr, s_te = _read(sdir / "train.csv"), _read(sdir / "test.csv")
-            Xs, _ = featurize(pd.concat([s_tr, s_te], ignore_index=True))
-            ys_tr, ys_te = _labels(s_tr), _labels(s_te)
-            data.shadow = {"X_full": Xs[: len(s_tr)], "y_full": ys_tr,
-                           "pops": _populations(Xs[: len(s_tr)], ys_tr, Xs[len(s_tr):], ys_te,
-                                                np.ones(len(s_te), dtype=bool), n, rng)}
+            Xs_tr, ys_tr, Xs_te, ys_te, _, _ = _bank_frames(d, shadow_bank)
+            data.shadow = {"X_full": Xs_tr, "y_full": ys_tr,
+                           "pops": _populations(Xs_tr, ys_tr, Xs_te, ys_te, np.ones(len(ys_te), dtype=bool), n, rng)}
             meta["shadow_bank"] = shadow_bank
         else:
             log.warning("shadow bank %s not found under %s; shadow attack unavailable", shadow_bank, sdir)
