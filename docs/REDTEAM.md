@@ -21,9 +21,9 @@ model trained at that σ was given to this command.
 ## Video scene 5 (40 s)
 
 On screen: the LinuxONE terminal running the command above, then the table, then `docker ps`.
-Narration, 81 words, about 32 s at 150 words per minute, which leaves about 8 s for the command to visibly run:
+Narration, 80 words, about 32 s at 150 words per minute, which leaves about 8 s for the command to visibly run:
 
-> Then we attacked ourselves. The coordinator only ever sees each bank's model update. Can it tell whether one specific suspect's transaction was in bank three's update? That is the secret banks may not share. We ran the test a hundred times with that transaction and a hundred without. Privacy off: the attacker is right eighty-six percent of the time. Turn on bank-side noise: fifty-two percent. A coin flip. The cost: model AUC drops from point nine nine to point nine seven.
+> Then we attacked ourselves. The coordinator only ever sees each bank's model update. Can it tell whether one specific suspect's transaction was in bank three's update? That is the secret banks may not share. We ran the test a hundred times with that transaction and a hundred without. Privacy off: the attacker is right eighty-six percent of the time. Turn on bank-side noise: fifty-two percent, near chance. The cost: model AUC drops from point nine nine to point nine seven.
 
 Every number is from `state/redteam.json`: attack acc 0.860 vs 0.518, model AUC 0.988 vs 0.970.
 Say "on synthetic data" in the caption. Do not say "detection rate": AUC is a ranking score.
@@ -68,7 +68,7 @@ Same game, `python -m fedaml.redteam_canary --bank <b> --trials 100`, files `sta
 | 3 | 0.937 [0.91, 0.97] LEAKS | 0.525 | 0.503 | 0.485 |
 | 4 | 0.865 [0.82, 0.91] LEAKS | 0.528 | 0.517 | 0.477 |
 
-Attack AUC with 90 % CI. Every DP-on cell is PROTECTED, and all nine are within 0.03 of 0.5.
+Attack AUC with 90 % CI. Every DP-on cell is PROTECTED, and all nine are within 0.03 of 0.5. At σ 0.3 the interval on banks 3 and 4 just excludes 0.5 (bank 3: 0.51–0.54), so call σ 0.3 "near chance" and keep "coin flip" for σ 0.5 and 0.8, whose intervals include 0.5.
 
 ## Footnote 1: row-level attacks on the real data are at chance even without DP
 
@@ -113,13 +113,13 @@ is shown so nobody mistakes it for a leak.
 |---|---|
 | ≥ 0.60 | **LEAKS** |
 | 0.55–0.60 | WEAK LEAK |
-| < 0.55 | **PROTECTED** (indistinguishable from a coin flip at this sample size) |
+| < 0.55 | **PROTECTED** (near chance; "coin flip" only when the 90 % CI includes 0.5) |
 
 ## Epsilon, honestly
 
 `fedaml.dp` reports approximately ε ≈ 19.1 for one round and ε ≈ 99.7 over 10 rounds at σ 0.3
 (δ = 1e-5). Its unit is one bank's whole update. **A formal ε of 100 is a very weak guarantee and we
-say so.** The measurement says something different: the strongest standard attacker is at chance for
+say so.** The measurement says something different: the strongest standard attacker is at or near chance (AUC 0.48–0.53) for
 a single flagged transaction at every σ we tried. From the DP-off attack we also report an empirical
 lower bound of ε ≥ 0.84 at 95 % confidence (Clopper-Pearson). That number states how much a single
 row demonstrably leaks without noise, not a property of the DP-on system. The gap is expected: the
