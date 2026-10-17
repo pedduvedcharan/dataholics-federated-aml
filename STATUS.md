@@ -4,31 +4,18 @@
 - 12:45 CDT Sat: **Window 12:00–13:00 at risk.** True: repo public (verified `gh repo view` → PUBLIC), VM reachable, repo cloned at `~/fedaml` on VM, base build tools installed (`~/setup.log` ends INSTALL_DONE), `docker-compose.yml` drafted, `submission/DEMO_SCRIPT.md` drafted. Not yet true: data on VM, partition, `features.py`, venv, python3-* apt packages, `docker compose` plugin, Dockerfile, any agent scaffold. Kaggle CSV owner not yet confirmed → single biggest risk for the 13:00 and 15:00 windows.
 - 12:00 CDT Sat: project locked, briefs written. Nothing built yet.
 
-## VM facts (MASTER verified 12:40 CDT via `ssh dataholics`)
-```
-uname -m      s390x
-nproc         3
-free -h       Mem: 7.8Gi total, 1.3Gi used, 6.6Gi available
-df -h /       /dev/dasda1 50G, 2.9G used, 45G free
-docker        Docker version 29.1.3, build 29.1.3-0ubuntu3~24.04.2 ; `docker ps` → no containers
-docker compose  NOT INSTALLED ("docker: unknown command: docker compose") → INFRA: apt install docker-compose-v2
-python3       3.12.3 ; no venv at ~/fedaml/.venv yet ; python3-sklearn/pandas/flask apt packages not installed yet
-~/fedaml      clone of this repo at commit 07ae21c ; no data/ dir yet
-```
-SSH alias `dataholics` added to the Mac's `~/.ssh/config` (host 148.100.99.63, user linux1, key ~/Downloads/dataholics.pem).
-
 ## Agent status
 | Agent | State | Last update | Next deliverable |
 |---|---|---|---|
-| MASTER | active | 12:45 | hourly loop; collect exact container commands from FEDERATION/AUDIT/GENAI; `docker compose up` on VM by 17:30 |
-| INFRA | started (apt base tools done) | 12:45 (seen by MASTER) | `apt install docker-compose-v2 python3-{numpy,scipy,pandas,sklearn,flask,matplotlib,requests}`; venv; Dockerfile + `docker build -t fedaml .`; land CSV; partition |
-| MODELS | not started | | `features.py` on synthetic 1k rows until `sample_50k.csv` exists |
+| MASTER | active | 12:55 | hourly loop; collect exact container commands from FEDERATION/AUDIT/GENAI; `docker compose up` on VM by 17:30 |
+| INFRA | in progress | 12:42 (commit 9f172a8: setup_vm.sh, Dockerfile) | run `setup_vm.sh` on VM; `docker build -t fedaml .` (record time); land CSV; `partition_data.py` |
+| MODELS | in progress | 12:50 (features.py 302 lines in tree) | determinism/NaN checks; `docs/FEATURES.md`; push |
 | FEDERATION | not started | | coordinator + bank MVP against stubs |
 | REDTEAM | not started | | loss-threshold attack scaffold |
 | AUDIT | not started | | `egress.py` + `tests/test_egress.py` (FEDERATION blocks on it) |
 | GENAI | not started | | LLM runtime verdict on s390x (20-min caps) |
 
-## VM facts (INFRA, measured 12:40 CDT Sat via `ssh dataholics`)
+## VM facts (INFRA, measured 12:40 CDT Sat via `ssh dataholics`; MASTER re-verified 12:40: `docker ps` empty, no venv, no data/, python3-sklearn/pandas/flask not yet installed)
 ```
 $ uname -m          -> s390x
 $ nproc             -> 3
@@ -50,6 +37,8 @@ SSH alias `dataholics` added to `~/.ssh/config` on the lead's Mac; key `~/Downlo
 - (none)
 
 ## Integration notes from MASTER (read if you own a service)
+- **Everyone works in this ONE clone on the lead's Mac.** `git add` only the paths you own (never `git add -A`), commit small, `git pull --rebase` before push. MASTER's 12:50 commit accidentally swept in `fedaml/features.py` (MODELS); content is intact, no action needed.
+- INFRA's `Dockerfile` (12:42) matches compose: `WORKDIR /app`, `PYTHONPATH=/app`, `logs/egress` pre-created, `curl` present. `docker-compose.yml` validated as YAML (11 services); `docker compose config` to be run on the VM once the plugin is installed.
 - Compose uses ONE image `fedaml` built from `./Dockerfile` (INFRA). `WORKDIR /app`, `PYTHONPATH=/app`; volumes mounted at `/app/data`, `/app/state`, `/app/logs`, so relative paths `data/...`, `state/...`, `logs/...` in code work unchanged.
 - **Servers must bind `0.0.0.0` inside their container** (coordinator :8000, dashboard :8050). The brief's "bind 127.0.0.1" applies to the *host* side: compose publishes `127.0.0.1:8050:8050` and `127.0.0.1:8000:8000`, so nothing is reachable from the internet. AUDIT and FEDERATION: add a `--host` flag defaulting to `0.0.0.0`, or read `HOST` env.
 - Coordinator URL inside compose is `http://coordinator:8000`. Banks must retry the first `GET /config` for ~60 s (coordinator may start later than the bank).
