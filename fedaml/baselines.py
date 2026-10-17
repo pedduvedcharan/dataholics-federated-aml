@@ -7,18 +7,20 @@ training rows concatenated: the upper bound that is illegal in practice.
 
 Writes ``state/baselines.json``::
 
-    {"per_bank": {"1": {"logreg": {"auc", "ap", "pooled_auc", "pooled_ap", "global_auc", "global_ap"}, ...}},
-     "federated": {"auc", "ap", "n", "pooled_auc", "pooled_ap", "per_bank": {id: {"auc","ap"}},
+    {"per_bank": {"1": {"logreg": {"auc", "ap", "pooled_auc", "pooled_ap", "on_bank": {id: {"auc","ap"}},
+                                   "global_auc", "global_ap"}, ...}},
+     "federated": {"auc", "ap", "n", "banks", "pooled_auc", "pooled_ap", "per_bank": {id: {"auc","ap"}},
                    "global_auc", "global_ap"} | null,
-     "centralized_logreg": {"auc", "ap", "n", "pooled_auc", "pooled_ap", "per_bank": {...},
+     "centralized_logreg": {"auc", "ap", "n", "banks", "pooled_auc", "pooled_ap", "per_bank": {...},
                             "global_auc", "global_ap"},
-     "meta": {...}}
+     "meta": {"eval_banks": [2, 3, 4], "train_banks": [1, 2, 3, 4], ...}}
 
-Per-bank model entries: ``auc``/``ap`` on the bank's **own** test.csv, ``pooled_*`` on
-the pooled per-bank test sets (CONTRACTS section 6). ``federated`` and
-``centralized_logreg``: ``auc``/``ap`` ARE the pooled numbers. ``global_*`` scores
-``global_test.csv`` (the red team's distribution-shift control; its mixed-bank
-account aggregates are systematically smaller, so it reads lower).
+Per-bank model entries: ``auc``/``ap`` on the bank's **own** test.csv, ``pooled_*`` over
+the evaluation banks (default 2,3,4: bank 1's laundering is invisible to per-row
+features, CONTRACTS section 4/6 Oct 17 15:55), ``on_bank`` = that model on every
+bank's own test. ``federated`` and ``centralized_logreg``: ``auc``/``ap`` ARE the
+pooled numbers; the centralized model still trains on all four banks. ``global_*``
+scores ``global_test.csv`` (the red team's distribution-shift control only).
 
 ``evaluate_model_pooled(path, bank_ids)`` and ``evaluate_model_json(path)`` are the
 shared evaluators for FEDERATION, REDTEAM and the dashboard.
@@ -110,33 +112,46 @@ def load_bank_tests(bank_ids: list[int], data_dir: str | Path | None = None
     return {b: load_bank(b, "test", data_dir=data_dir) for b in bank_ids}
 
 
-def pooled_metrics(scores: dict[int, np.ndarray], tests: dict[int, tuple[np.ndarray, np.ndarray]]) -> dict:
-    """Pool per-bank predictions and labels -> ``{"auc","ap","n","per_bank":{id:{"auc","ap"}}}``."""
+EVAL_BANKS = [2, 3, 4]  # pooled basis (CONTRACTS section 4/6, Oct 17 15:55): bank 1 is unlearnable
+
+
+def pooled_metrics(scores: dict[int, np.ndarray], tests: dict[int, tuple[np.ndarray, np.ndarray]],
+                   eval_banks: list[int] | None = None) -> dict:
+    """Pool per-bank predictions over ``eval_banks`` (default: every bank in ``tests``).
+
+    Returns ``{"auc","ap","n","banks","per_bank":{id:{"auc","ap"}}}``; ``per_bank``
+    covers every bank in ``tests``, pooled ``auc``/``ap`` only the evaluation banks.
+    """
     per_bank = {str(b): metrics(tests[b][1], scores[b]) for b in tests}
-    y = np.concatenate([tests[b][1] for b in tests])
-    p = np.concatenate([scores[b] for b in tests])
+    banks = [b for b in (eval_banks or list(tests)) if b in tests]
+    y = np.concatenate([tests[b][1] for b in banks])
+    p = np.concatenate([scores[b] for b in banks])
     out = metrics(y, p)
     out["n"] = int(len(y))
+    out["banks"] = banks
     out["per_bank"] = per_bank
     return out
 
 
 def evaluate_model_pooled(path: str | Path, bank_ids: list[int] | None = None,
                           data_dir: str | Path | None = None,
-                          tests: dict[int, tuple[np.ndarray, np.ndarray]] | None = None) -> dict:
+                          tests: dict[int, tuple[np.ndarray, np.ndarray]] | None = None,
+                          eval_banks: list[int] | None = None) -> dict:
     """Headline evaluator: featurize each bank's ``test.csv`` within that bank, score it
-    with the ``state/global_*.json`` model, pool the predictions.
+    with the ``state/global_*.json`` model, pool the predictions over ``eval_banks``
+    (default ``EVAL_BANKS`` = 2,3,4; pass ``None``-free list to override).
 
-    Returns ``{"auc","ap","n","per_bank":{id:{"auc","ap"}}}``. Pass ``tests`` from
-    :func:`load_bank_tests` to reuse already-featurized test sets.
+    Returns ``{"auc","ap","n","banks","per_bank":{id:{"auc","ap"}}}``. Pass ``tests``
+    from :func:`load_bank_tests` to reuse already-featurized test sets; ``per_bank``
+    then covers every bank in ``tests``.
     """
     model = load_model_json(path)
     if tests is None:
-        tests = load_bank_tests(bank_ids or [1, 2, 3, 4], data_dir=data_dir)
+        tests = load_bank_tests(bank_ids or EVAL_BANKS, data_dir=data_dir)
     scores = {b: predict_proba_json(model, X) for b, (X, _) in tests.items()}
-    out = pooled_metrics(scores, tests)
+    out = pooled_metrics(scores, tests, eval_banks or EVAL_BANKS)
     log.info("%s: pooled auc=%.4f ap=%.4f on %d rows (banks %s)",
-             path, out["auc"], out["ap"], out["n"], list(tests))
+             path, out["auc"], out["ap"], out["n"], out["banks"])
     return out
 
 
@@ -146,7 +161,7 @@ def evaluate_model_pooled(path: str | Path, bank_ids: list[int] | None = None,
 def make_models(seed: int, n_jobs: int) -> dict[str, object]:
     """The three models compared per bank. All class-weighted for the 1:1000 imbalance."""
     return {
-        "logreg": LogisticRegression(class_weight="balanced", max_iter=200),
+        "logreg": LogisticRegression(class_weight="balanced", max_iter=1000),
         "rf": RandomForestClassifier(n_estimators=100, max_depth=12, n_jobs=n_jobs,
                                      class_weight="balanced_subsample", random_state=seed),
         "hgb": HistGradientBoostingClassifier(class_weight="balanced", random_state=seed),
@@ -166,31 +181,35 @@ def cap_rows(X: np.ndarray, y: np.ndarray, max_rows: int, seed: int) -> tuple[np
     return X[idx], y[idx]
 
 
-def _score_all(model, tests: dict, Xg: np.ndarray, yg: np.ndarray) -> dict:
-    """Pooled (headline) and global_test (control) metrics for a fitted sklearn model."""
-    pooled = pooled_metrics({b: model.predict_proba(X)[:, 1] for b, (X, _) in tests.items()}, tests)
+def _score_all(model, tests: dict, Xg: np.ndarray, yg: np.ndarray, eval_banks: list[int]) -> dict:
+    """Pooled (headline, over eval_banks) and global_test (control) metrics for a fitted model."""
+    pooled = pooled_metrics({b: model.predict_proba(X)[:, 1] for b, (X, _) in tests.items()}, tests, eval_banks)
     glob = metrics(yg, model.predict_proba(Xg)[:, 1])
-    return {"auc": pooled["auc"], "ap": pooled["ap"], "n": pooled["n"],
+    return {"auc": pooled["auc"], "ap": pooled["ap"], "n": pooled["n"], "banks": pooled["banks"],
             "pooled_auc": pooled["auc"], "pooled_ap": pooled["ap"], "per_bank": pooled["per_bank"],
             "global_auc": glob["auc"], "global_ap": glob["ap"]}
 
 
 def run_baselines(banks: list[int], data_dir: Path, max_rows: int, seed: int, n_jobs: int,
-                  models: list[str], centralized: bool = True) -> dict:
+                  models: list[str], centralized: bool = True,
+                  eval_banks: list[int] | None = None) -> dict:
     """Train/evaluate every (bank, model) and the centralized ceiling.
 
-    Key layout (CONTRACTS section 6, Oct 17 13:15): per-bank model entries carry
-    ``auc``/``ap`` on the bank's **own** test.csv plus ``pooled_auc``/``pooled_ap``
-    (each bank's test.csv featurized within that bank, predictions pooled);
+    Key layout (CONTRACTS section 6, Oct 17 15:55): per-bank model entries carry
+    ``auc``/``ap`` on the bank's **own** test.csv, ``pooled_auc``/``pooled_ap`` over
+    the evaluation banks' test sets (default 2,3,4; each featurized within its
+    bank), and ``on_bank{id:{auc,ap}}`` = the same model on every bank's own test;
     ``centralized_logreg`` and ``federated`` carry ``auc``/``ap`` on the pooled
-    basis (duplicated as ``pooled_*``). ``global_auc``/``global_ap`` everywhere is
-    ``global_test.csv``, the red team's distribution-shift control only.
+    basis (duplicated as ``pooled_*``) plus ``per_bank``. ``global_auc``/``global_ap``
+    everywhere is ``global_test.csv``, the red team's distribution-shift control only.
     """
+    eval_banks = [b for b in (eval_banks or EVAL_BANKS) if b in banks] or banks
     Xg, yg = load_global_test(data_dir=data_dir)
     tests = load_bank_tests(banks, data_dir=data_dir)
     result: dict = {"per_bank": {}, "federated": None, "centralized_logreg": None,
                     "meta": {"basis": "pooled: each bank's test.csv featurized within that bank, "
-                                      "predictions pooled over banks " + str(banks),
+                                      "predictions pooled over evaluation banks " + str(eval_banks),
+                             "eval_banks": eval_banks, "train_banks": banks,
                              "train_rows": {}, "test_rows": {str(b): int(len(y)) for b, (_, y) in tests.items()},
                              "test_positives": {str(b): int(y.sum()) for b, (_, y) in tests.items()},
                              "fit_seconds": {},
@@ -211,10 +230,11 @@ def run_baselines(banks: list[int], data_dir: Path, max_rows: int, seed: int, n_
             t0 = time.time()
             model.fit(Xtr, ytr)
             dt = time.time() - t0
-            sc = _score_all(model, tests, Xg, yg)
+            sc = _score_all(model, tests, Xg, yg, eval_banks)
             own = sc["per_bank"][str(b)]
             result["per_bank"][str(b)][key] = {"auc": own["auc"], "ap": own["ap"],
                                                "pooled_auc": sc["auc"], "pooled_ap": sc["ap"],
+                                               "on_bank": sc["per_bank"],
                                                "global_auc": sc["global_auc"], "global_ap": sc["global_ap"]}
             result["meta"]["fit_seconds"][str(b)][key] = round(dt, 1)
             log.info("bank %d %-6s own auc=%.4f ap=%.4f | pooled auc=%.4f ap=%.4f | global auc=%.4f ap=%.4f (%.1fs)",
@@ -225,7 +245,7 @@ def run_baselines(banks: list[int], data_dir: Path, max_rows: int, seed: int, n_
         del all_X
         t0 = time.time()
         clf = LogisticRegression(class_weight="balanced", max_iter=200).fit(Xc, yc)
-        result["centralized_logreg"] = _score_all(clf, tests, Xg, yg)
+        result["centralized_logreg"] = _score_all(clf, tests, Xg, yg, eval_banks)
         result["meta"]["centralized_train_rows"] = int(len(yc))
         result["meta"]["fit_seconds"]["centralized_logreg"] = round(time.time() - t0, 1)
         log.info("centralized logreg on %d rows: pooled auc=%.4f ap=%.4f | global auc=%.4f ap=%.4f",
@@ -239,7 +259,8 @@ def attach_federated(result: dict, model_path: Path, data_dir: Path) -> dict:
     """Fill ``result["federated"]`` (pooled + global_test) from a global model JSON if it exists."""
     tests = result["meta"].pop("_tests", None)
     if model_path.exists():
-        fed = evaluate_model_pooled(model_path, data_dir=data_dir, tests=tests)
+        fed = evaluate_model_pooled(model_path, data_dir=data_dir, tests=tests,
+                                    eval_banks=result["meta"]["eval_banks"])
         glob = evaluate_model_json(model_path, data_dir=data_dir)
         fed["pooled_auc"], fed["pooled_ap"] = fed["auc"], fed["ap"]
         fed["global_auc"], fed["global_ap"] = glob["auc"], glob["ap"]
@@ -265,7 +286,8 @@ def _fmt(v: float | None) -> str:
 
 def markdown_table(result: dict) -> str:
     """Markdown table: pooled basis (headline), own-bank slice, global_test control."""
-    lines = ["| Model | Train data | Own-test AUC | Own-test AP | Pooled AUC | Pooled AP | global_test AUC | global_test AP |",
+    eb = ",".join(str(b) for b in result["meta"].get("eval_banks", []))
+    lines = [f"| Model | Train data | Own-test AUC | Own-test AP | Pooled({eb}) AUC | Pooled({eb}) AP | global_test AUC | global_test AP |",
              "|---|---|---|---|---|---|---|---|"]
     for b, per in result["per_bank"].items():
         for key, m in per.items():
@@ -285,7 +307,9 @@ def markdown_table(result: dict) -> str:
 
 def _main() -> None:
     parser = argparse.ArgumentParser(description="per-bank baselines + centralized ceiling")
-    parser.add_argument("--banks", default="1,2,3,4")
+    parser.add_argument("--banks", default="1,2,3,4", help="banks to train on / load tests for")
+    parser.add_argument("--eval-banks", default=",".join(map(str, EVAL_BANKS)),
+                        help="banks whose test sets form the pooled basis")
     parser.add_argument("--models", default=",".join(MODEL_KEYS), help="subset of logreg,rf,hgb")
     parser.add_argument("--max-rows", type=int, default=500_000)
     parser.add_argument("--n-jobs", type=int, default=2)
@@ -293,7 +317,8 @@ def _main() -> None:
     parser.add_argument("--data-dir", default=str(DATA_DIR))
     parser.add_argument("--state-dir", default=str(STATE_DIR))
     parser.add_argument("--federated-model", default=None,
-                        help="global model JSON to score (default: <state-dir>/global_final.json)")
+                        help="global model JSON for the federated row (default: <state-dir>/global_final_dpon.json, "
+                             "else global_final.json)")
     parser.add_argument("--no-centralized", action="store_true")
     parser.add_argument("--evaluate", default=None,
                         help="only score this global_*.json (pooled over --banks, plus global_test control) and exit")
@@ -302,8 +327,10 @@ def _main() -> None:
     data_dir, state_dir = Path(args.data_dir), Path(args.state_dir)
 
     banks = [int(b) for b in args.banks.split(",") if b.strip()]
+    eval_banks = [int(b) for b in args.eval_banks.split(",") if b.strip()]
     if args.evaluate:
-        out = evaluate_model_pooled(args.evaluate, banks, data_dir=data_dir)
+        out = evaluate_model_pooled(args.evaluate, sorted(set(banks) | set(eval_banks)),
+                                    data_dir=data_dir, eval_banks=eval_banks)
         glob = evaluate_model_json(args.evaluate, data_dir=data_dir)
         out["global_auc"], out["global_ap"] = glob["auc"], glob["ap"]
         print(json.dumps(out))
@@ -312,8 +339,13 @@ def _main() -> None:
     models = [m for m in args.models.split(",") if m in MODEL_KEYS]
     t0 = time.time()
     result = run_baselines(banks, data_dir, args.max_rows, args.seed, args.n_jobs, models,
-                           centralized=not args.no_centralized)
-    fed_path = Path(args.federated_model) if args.federated_model else state_dir / "global_final.json"
+                           centralized=not args.no_centralized, eval_banks=eval_banks)
+    if args.federated_model:
+        fed_path = Path(args.federated_model)
+    else:
+        fed_path = state_dir / "global_final_dpon.json"
+        if not fed_path.exists():
+            fed_path = state_dir / "global_final.json"
     attach_federated(result, fed_path, data_dir)
     result["meta"]["total_seconds"] = round(time.time() - t0, 1)
     out = state_dir / "baselines.json"
