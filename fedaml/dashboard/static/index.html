@@ -437,7 +437,9 @@ async function tick() {
     $('pill-live').className = 'pill offline'; $('pill-live').innerHTML = '<span class="dot"></span>offline · ' + esc(e.message);
   }
 }
-tick(); setInterval(tick, 3000);
+let deepLinked = false;   // /#p-train etc. frames one panel at the top (used for the 1280x720 screenshots)
+async function firstTick() { await tick(); if (!deepLinked && location.hash) { const el = document.querySelector(location.hash); if (el) { el.scrollIntoView({ block: 'start' }); window.scrollBy(0, -8); } deepLinked = true; } }
+firstTick(); setInterval(tick, 3000);
 </script>
 </body>
 </html>
