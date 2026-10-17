@@ -18,6 +18,17 @@ DP off                     0.988       0.860       0.937  [0.91, 0.97]   LEAKS
 the same number as the coordinator's status files. `-` means that σ was scored in the game only; no
 model trained at that σ was given to this command.
 
+## Video scene 5 (40 s)
+
+On screen: the LinuxONE terminal running the command above, then the table, then `docker ps`.
+Narration, 81 words, about 32 s at 150 words per minute, which leaves about 8 s for the command to visibly run:
+
+> Then we attacked ourselves. The coordinator only ever sees each bank's model update. Can it tell whether one specific suspect's transaction was in bank three's update? That is the secret banks may not share. We ran the test a hundred times with that transaction and a hundred without. Privacy off: the attacker is right eighty-six percent of the time. Turn on bank-side noise: fifty-two percent. A coin flip. The cost: model AUC drops from point nine nine to point nine seven.
+
+Every number is from `state/redteam.json`: attack acc 0.860 vs 0.518, model AUC 0.988 vs 0.970.
+Say "on synthetic data" in the caption. Do not say "detection rate": AUC is a ranking score.
+If the demo σ changes, rerun the command and update the two percentages and the AUCs.
+
 ## What is attacked, and by whom
 
 **Threat model.** An honest-but-curious coordinator. It follows the protocol but studies the one thing
