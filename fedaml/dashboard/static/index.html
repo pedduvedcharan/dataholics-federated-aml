@@ -123,7 +123,7 @@
   </section>
 
   <section class="panel" id="p-priv">
-    <h2>3 · Privacy budget <span class="note">ε is approximate (Gaussian mechanism, simple composition)</span></h2>
+    <h2>3 · Privacy — ε spent <span class="note">approximate, update-level Gaussian composition over rounds</span></h2>
     <div id="priv-body" class="waiting">waiting for status.json</div>
   </section>
 
@@ -290,17 +290,24 @@ function renderTraining(s) {
 
 /* ---------- 3. privacy budget ---------- */
 function renderPrivacy(s) {
-  const st = s.status; const budget = s.eps_budget || 8;
+  // MASTER 16:10: show the honest ε against the run's planned total; no "exhausted" red state; budget only as an optional policy tick.
+  const st = s.status; const budget = (typeof s.eps_budget === 'number' && s.eps_budget > 0) ? s.eps_budget : null;
   if (!st || !st.dp) { $('priv-body').className = 'waiting'; $('priv-body').textContent = 'waiting for status.json'; return; }
   const dp = st.dp; const eps = typeof dp.epsilon_spent === 'number' ? dp.epsilon_spent : null;
-  const frac = eps == null ? 0 : Math.min(1, eps / budget);
-  const cls = frac >= 1 ? 'crit' : frac >= 0.8 ? 'serious' : frac >= 0.5 ? 'warn' : '';
-  const stateTxt = !dp.enabled ? '<span class="tag bad">DP OFF — unprotected run</span>' : frac >= 1 ? '<span class="tag bad">⚠ budget exhausted</span>' : frac >= 0.8 ? '<span class="tag warn">▲ nearing budget</span>' : '<span class="tag ok">✔ within budget</span>';
+  const rDone = Number(st.round) || 0, rTotal = Number(st.total_rounds) || 0;
+  let planned = typeof dp.epsilon_planned_total === 'number' ? dp.epsilon_planned_total : null;
+  let plannedSrc = 'dp.epsilon_planned_total';
+  if (planned == null && eps != null && rDone > 0 && rTotal > 0) { planned = eps * rTotal / rDone; plannedSrc = `ε spent × ${rTotal} / ${rDone} rounds (estimate)`; }
+  const frac = (eps == null || !planned) ? 0 : Math.min(1, eps / planned);
+  const cls = frac >= 0.5 ? 'warn' : '';
+  const stateTxt = !dp.enabled ? '<span class="tag bad">DP OFF — unprotected run</span>' : `<span class="tag ok">DP on · round ${esc(rDone)} of ${esc(rTotal)}</span>`;
+  const scaleMax = planned ? planned : (budget || 1);
+  const tick = (budget && planned) ? `<div style="position:absolute; top:-3px; bottom:-3px; left:${Math.min(100, 100 * budget / scaleMax).toFixed(1)}%; width:2px; background:var(--ink-2)" title="policy budget ${budget}"></div>` : '';
   $('priv-body').className = '';
   $('priv-body').innerHTML = `
-    <div style="display:flex; align-items:baseline; gap:12px;"><span class="big">ε ≈ ${eps == null ? '—' : f2(eps)}</span><span style="color:var(--ink-2)">of budget ${budget}</span>${stateTxt}</div>
-    <div class="meter"><div class="bar"><div class="fill ${cls}" style="width:${(frac * 100).toFixed(1)}%"></div></div>
-      <div class="ticks"><span>0</span><span>${(budget / 2)}</span><span>${budget}</span></div></div>
+    <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap"><span class="big">ε spent ≈ ${eps == null ? '—' : f2(eps)}</span><span style="color:var(--ink-2)">(approximate)</span>${stateTxt}</div>
+    <div class="meter"><div class="bar" style="position:relative"><div class="fill ${cls}" style="width:${(frac * 100).toFixed(1)}%"></div>${tick}</div>
+      <div class="ticks"><span>0</span><span>${planned ? 'planned total for this run ≈ ' + f2(planned) + (plannedSrc.startsWith('dp.') ? '' : ' (projected)') : (dp.enabled ? 'planned total: waiting for round 1' : 'no noise in this run')}${budget ? ' · policy budget ' + budget + ' (dashboard override)' : ''}</span></div></div>
     <dl class="kv">
       <dt>Noise multiplier σ</dt><dd>${esc(dp.sigma ?? '—')} <span style="color:var(--muted)">(Gaussian std = σ · clip)</span></dd>
       <dt>Clip norm (L2)</dt><dd>${esc(dp.clip_norm ?? '—')} <span style="color:var(--muted)">per update, applied inside the bank</span></dd>
@@ -308,9 +315,7 @@ function renderPrivacy(s) {
       <dt>Rounds composed</dt><dd>${esc(st.round ?? '—')} of ${esc(st.total_rounds ?? '—')}</dd>
       ${dp.mode || dp.noise_added_by ? `<dt>DP mode</dt><dd>${esc(dp.mode || '')}${dp.noise_added_by ? ' · noise added by ' + esc(dp.noise_added_by) : ''}</dd>` : ''}
     </dl>
-    <p style="color:var(--muted); font-size:12px; margin:10px 0 0">${dp.noise_added_by === 'coordinator'
-      ? 'Each bank clips its weight delta to the L2 norm above before it reaches the egress door; the coordinator adds calibrated Gaussian noise to every accepted update before averaging (central DP), so the published global model never reflects an exact update.'
-      : 'Each bank clips its weight delta to the L2 norm above and adds Gaussian noise before it reaches the egress door, so the coordinator never sees an exact update.'} ε grows with every round; the meter turns amber at 50% and red at 80% of the budget.${dp.epsilon_note ? ' ' + esc(dp.epsilon_note) : ''}</p>`;
+    <p style="color:var(--muted); font-size:12px; margin:10px 0 0">Approximate, update-level Gaussian composition over rounds; the coordinator adds the noise (DP-FedAvg). Per-record guarantees would need DP-SGD inside each bank (stretch). Each bank clips its weight delta to the L2 norm above before it reaches the egress door${dp.noise_added_by === 'coordinator' ? '; the coordinator adds calibrated Gaussian noise to every accepted update before averaging' : '; noise is added before egress'}. ε grows with every round; the bar fills toward the run's planned total.${dp.epsilon_note ? ' Coordinator note: ' + esc(dp.epsilon_note) : ''}</p>`;
 }
 
 /* ---------- 4. rogue bank ---------- */
@@ -400,7 +405,7 @@ function renderEvidence(s) {
     ['1 · Regulator view', `${s.logs_dir || 'logs/egress'}/bank_<id>.jsonl`, 'kind=model_update → messages, bytes, params_shared, rows_shared; kind=blocked → blocked attempts; tail = last 10 lines by ts', (f['logs/egress'] && f['logs/egress'].present) ? `${f['logs/egress'].n_files} file(s)` : 'missing'],
     ['2 · Training', `${s.state_dir || 'state'}/status.json`, pooled ? `rounds[].${pooled}, rounds[].${pooled.replace('auc', 'ap')}` + (evb ? ` (pooled over eval_banks=[${evb}] test sets)` : '') + `, rounds[].per_bank_auc` + (pooled !== 'global_auc' && rounds.some(r => typeof r.global_auc === 'number') ? '; rounds[].global_auc as control' : '') : 'rounds[].global_auc, rounds[].global_ap, rounds[].per_bank_auc (global_test control; pooled key not written yet)', age('status.json')],
     ['2 · Training (reference lines)', `${s.state_dir || 'state'}/baselines.json`, 'per_bank.<id>.{logreg,rf,hgb}.pooled_auc (best per bank; .auc = own test, fallback only), centralized_logreg.auc and federated.auc (both pooled basis)', age('baselines.json')],
-    ['3 · Privacy budget', `${s.state_dir || 'state'}/status.json`, `dp.epsilon_spent, dp.sigma, dp.clip_norm, dp.delta, dp.mode, dp.noise_added_by, dp.epsilon_note, round/total_rounds · budget ${s.eps_budget} is a dashboard setting (--eps-budget), not a measurement`, age('status.json')],
+    ['3 · Privacy', `${s.state_dir || 'state'}/status.json`, `dp.epsilon_spent (approximate), dp.sigma, dp.clip_norm, dp.delta, dp.mode, dp.noise_added_by, dp.epsilon_note, round/total_rounds; planned total = dp.epsilon_planned_total or ε spent × total_rounds / round` + (typeof s.eps_budget === 'number' ? ` · policy budget ${s.eps_budget} is a dashboard override (--eps-budget), not a measurement` : ' · no policy budget set'), age('status.json')],
     ['4 · Rogue bank', `${s.state_dir || 'state'}/${rogueSrc}`, 'rounds[].accepted, rounds[].excluded[].{bank_id,reason,score}' + (s.status_rogue_off ? '; final global_auc of status_rogue_off.json vs status_rogue_on.json' : ''), age(rogueSrc)],
     ['5 · Red team', `${s.state_dir || 'state'}/redteam.json`, `attack, target (headline = ${rt.target || 'laundering'} rows), dp_off/dp_on.{attack_acc,attack_auc,n,verdict}, model_auc_off/on; footnote from detail.dp_off|dp_on.targets.<other>.result`, age('redteam.json')],
     ['6 · Footprint', `${s.state_dir || 'state'}/footprint.json`, 'per_container_peak_rss_mb, seconds_per_round, total_runtime_s, cpu_count, arch', age('footprint.json')],

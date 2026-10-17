@@ -29,7 +29,7 @@ def main() -> None:
     ap.add_argument("--state-dir", default=str(DEFAULT_STATE_DIR))
     ap.add_argument("--logs-dir", default=str(DEFAULT_LOGS_DIR))
     ap.add_argument("--eps-budget", type=float, default=DEFAULT_EPS_BUDGET,
-                    help="privacy budget shown on the meter (default 8)")
+                    help="optional policy budget drawn as a tick on the privacy meter (default: off)")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")

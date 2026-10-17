@@ -29,7 +29,10 @@ log = logging.getLogger("fedaml.dashboard")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_STATE_DIR = Path(os.environ.get("FEDAML_STATE_DIR", "state"))
 DEFAULT_LOGS_DIR = egress.DEFAULT_LOGS_DIR
-DEFAULT_EPS_BUDGET = float(os.environ.get("FEDAML_EPS_BUDGET", "8"))
+#: Optional *policy* budget shown as a tick on the privacy meter; off unless set
+#: (MASTER 16:10: the meter compares ε spent with the run's planned total, not a budget).
+_eb = os.environ.get("FEDAML_EPS_BUDGET", "").strip()
+DEFAULT_EPS_BUDGET: float | None = float(_eb) if _eb else None
 TAIL_LINES = 10
 
 #: api key -> file name under the state dir.  The rogue comparison files are
@@ -76,7 +79,7 @@ def file_info(path: Path) -> dict:
 
 
 def build_state(state_dir: Path = DEFAULT_STATE_DIR, logs_dir: Path = DEFAULT_LOGS_DIR,
-                eps_budget: float = DEFAULT_EPS_BUDGET) -> dict:
+                eps_budget: float | None = DEFAULT_EPS_BUDGET) -> dict:
     """Everything the page needs in one JSON document."""
     out: dict[str, Any] = {
         "now": _now().isoformat(timespec="seconds"),
@@ -104,7 +107,7 @@ def build_state(state_dir: Path = DEFAULT_STATE_DIR, logs_dir: Path = DEFAULT_LO
 
 
 def create_app(state_dir: Path = DEFAULT_STATE_DIR, logs_dir: Path = DEFAULT_LOGS_DIR,
-               eps_budget: float = DEFAULT_EPS_BUDGET) -> Flask:
+               eps_budget: float | None = DEFAULT_EPS_BUDGET) -> Flask:
     """Build the Flask app (kept separate from ``run`` so tests can use it)."""
     app = Flask("fedaml.dashboard", static_folder=None)
     app.config["JSON_SORT_KEYS"] = False
