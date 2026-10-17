@@ -250,15 +250,35 @@ def attack_population(model: dict, data: AttackData, target: str, seed: int,
     return out
 
 
+_POOLED_TESTS: dict = {}
+
+
+def pooled_model_auc(path: str, banks: list[int], data_dir: str) -> Optional[float]:
+    """Model AUC exactly as the coordinator / slides report it: MODELS' headline evaluator
+    (each bank's test.csv featurised within that bank, predictions pooled over ``banks``)."""
+    try:
+        from fedaml.baselines import evaluate_model_pooled, load_bank_tests
+        key = (tuple(banks), data_dir)
+        if key not in _POOLED_TESTS:
+            _POOLED_TESTS[key] = load_bank_tests(list(banks), data_dir=data_dir)
+        return float(evaluate_model_pooled(path, tests=_POOLED_TESTS[key], eval_banks=list(banks))["auc"])
+    except Exception as exc:  # noqa: BLE001 - fall back to our own evaluation
+        log.warning("pooled evaluator unavailable (%s); model AUC from redteam's own test features", exc)
+        return None
+
+
 def evaluate_model(model: dict, data: AttackData, seed: int, attack: str = "auto",
-                   shadow_epochs: int = 5) -> dict:
-    """Model AUC on the member bank's test file (and global_test when present)
-    plus the attack on every available population."""
+                   shadow_epochs: int = 5, data_dir: Optional[str] = None) -> dict:
+    """Model AUC (pooled evaluator when available, else the member banks' test files featurised
+    jointly with train) plus the attack on every available population."""
     def auc(X, y):
         if X is None or len(np.unique(y)) < 2:
             return None
         return float(roc_auc_score(y, predict_proba(model, X, data.feature_names)))
-    return {"model_auc": auc(data.X_test, data.y_test), "model_auc_global_test": auc(data.X_global, data.y_global),
+    pooled = pooled_model_auc(model["path"], data.meta["member_banks"], data_dir) if data_dir else None
+    return {"model_auc": pooled if pooled is not None else auc(data.X_test, data.y_test),
+            "model_auc_source": "fedaml.baselines.evaluate_model_pooled" if pooled is not None else "redteam joint featurisation",
+            "model_auc_global_test": auc(data.X_global, data.y_global),
             "model_sha256": model["sha256"], "model_path": model["path"],
             "targets": {t: attack_population(model, data, t, seed, attack, shadow_epochs) for t in data.pops}}
 
@@ -363,13 +383,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         path = train_overfit_local(data, args.selftest_epochs, args.seed,
                                    str(Path(args.out).parent / "redteam_selftest_model.json"))
         log.info("selftest model written to %s", path)
-        rows.append(("local", evaluate_model(load_model(path), data, args.seed, args.attack, args.shadow_epochs)))
+        rows.append(("local", evaluate_model(load_model(path), data, args.seed, args.attack, args.shadow_epochs, args.data_dir)))
     if args.model_off:
-        rows.append(("DP off", evaluate_model(load_model(args.model_off), data, args.seed, args.attack, args.shadow_epochs)))
+        rows.append(("DP off", evaluate_model(load_model(args.model_off), data, args.seed, args.attack, args.shadow_epochs, args.data_dir)))
     on = None
     ons = [p for p in (args.model_on or "").split(",") if p]
     for path in ons:
-        res = evaluate_model(load_model(path), data, args.seed, args.attack, args.shadow_epochs)
+        res = evaluate_model(load_model(path), data, args.seed, args.attack, args.shadow_epochs, args.data_dir)
         label = "DP on" if len(ons) == 1 else f"DP on ({Path(path).stem.replace('global_final_', '')})"
         rows.append((label, res))
         on = on or res                      # §6 dp_on = the first DP-on model given
