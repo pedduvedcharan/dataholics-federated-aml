@@ -2,7 +2,7 @@
 # One image ("fedaml", built from ./Dockerfile by INFRA), one service per role.
 # Default profile:  docker compose up            -> coordinator, bank1..bank4, rogue, dashboard
 # Tools profile:    docker compose run --rm attacker | genai | alerts | baselines | tryleak   (llm starts with genai)
-# Toggles (env, all optional):  ROUNDS BANKS EVAL_BANKS DP SIGMA CLIP DEFENSE TAU TAG EPOCHS TRAINER ROGUE_ATTACK ROGUE_FACTOR SEED
+# Toggles (env, all optional):  ROUNDS BANKS EVAL_BANKS DP DP_MODE SIGMA CLIP DEFENSE TAU TAG EPOCHS TRAINER ROGUE_ATTACK ROGUE_FACTOR SEED
 #   e.g.  DP=off DEFENSE=off docker compose up           (the "unprotected" run)
 #         DP=on  DEFENSE=on  docker compose up           (the demo run; defaults)
 # Volumes: ./data (read-only shards), ./state (models + status JSON), ./logs (egress audit).
@@ -51,7 +51,8 @@ services:
       --banks ${BANKS:-1,2,3,4,5}
       --eval-banks ${EVAL_BANKS:-2,3,4}
       --dp ${DP:-on}
-      --sigma ${SIGMA:-0.8}
+      --dp-mode ${DP_MODE:-local}
+      --sigma ${SIGMA:-0.3}
       --clip ${CLIP:-1.0}
       --defense ${DEFENSE:-on}
       --tau ${TAU:-1.5}
@@ -59,6 +60,8 @@ services:
       --tag "${TAG:-}"
       --seed ${SEED:-42}
     # No-rogue run: BANKS=1,2,3,4 docker compose up --scale rogue=0
+    # DP_MODE local (MASTER 16:20): banks add the noise BEFORE egress.send, so the coordinator never sees an un-noised update.
+    #   central (DP-FedAvg) is available but is not the story: REDTEAM's auditing game shows the coordinator reads membership at AUC 0.86-0.94 from un-noised updates.
     # EVAL_BANKS default 2,3,4 (MASTER 15:55): bank 1 trains but is unlearnable with per-row features; reported per bank only.
     ports:
       - "127.0.0.1:8000:8000"       # host-only, for curl debugging through an SSH tunnel
