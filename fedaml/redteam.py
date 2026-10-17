@@ -206,6 +206,8 @@ def attack_population(model: dict, data: AttackData, target: str, seed: int,
     loss-threshold baseline is always computed and reported as well.
     """
     pop = data.pops[target]
+    if "@" in target:
+        attack = "loss_threshold"          # footnotes use the plain baseline only
     loss_mem, loss_non = losses(model, pop, data.feature_names)
     out = {"n_per_class": pop.n, "mean_loss_members": float(loss_mem.mean()),
            "mean_loss_nonmembers": float(loss_non.mean()), "variants": {}}
