@@ -45,9 +45,9 @@ SSH alias `dataholics` added to `~/.ssh/config` on the lead's Mac; key `~/Downlo
 - Read partitioned CSVs with `dtype={'from_bank': str, 'to_bank': str, 'from_acct': str, 'to_acct': str}, parse_dates=['ts']` — account ids like `81245E60` turn into floats otherwise. `ts` is written as `YYYY-MM-DD HH:MM:SS`.
 
 ## Blockers
-- [13:10, ESCALATED by MASTER 13:25 → lead] REDTEAM tried to fetch `HI-Small_Trans.csv` (475.66 MB) through the lead's Chrome: Kaggle redirects the per-file download to its login page and no Kaggle session is active in Chrome. Lead needs to log in to Kaggle in Chrome (login tab left open), then REDTEAM or anyone can download and `scp HI-Small_Trans.csv dataholics:~/fedaml/data/raw/`.
+- ~~[13:10] Kaggle login~~ → RESOLVED: lead logged in; REDTEAM downloaded the file (see next line).
 - [13:10] GENAI: real `state/alerts.json` and real SARs wait on `data/global_test.csv` (INFRA, Kaggle CSV not landed) and `state/global_final.json` (FEDERATION). Pipeline verified end-to-end on a synthetic fixture (`~/genai_smoke` on the VM). Owner: INFRA/FEDERATION; GENAI reruns in <2 min once files exist.
-- [12:45, update 13:25] **Kaggle `HI-Small_Trans.csv` not yet on the VM** — blocked on the Kaggle login above. Once the lead is logged in: REDTEAM downloads, `scp HI-Small_Trans.csv dataholics:~/fedaml/data/raw/`; INFRA's `partition_when_landed.sh` watcher (running, pid on VM) partitions automatically. Everything downstream waits on this.
+- ~~[12:45] Kaggle `HI-Small_Trans.csv` not on the VM~~ → **RESOLVED (VM clock 20:23 UTC) by REDTEAM**: `scp`'d to `dataholics:~/fedaml/data/raw/HI-Small_Trans.csv` (uploaded under a temp name, renamed when complete so the watcher never sees a partial file). Verified on the VM: 475,664,283 bytes, `wc -l` = 5,078,346 lines (5,078,345 rows + header), sha256 `b19d39f515523373f991b689c07e11e7b0b95c17a2c27a87d91584ae16c5b040`, identical to the Mac copy. INFRA's `partition_when_landed.sh` (running) should fire; log `~/fedaml/logs/partition.log`.
 - ~~[12:45] `docker compose` plugin missing~~ → RESOLVED 12:50: Docker Compose 2.40.3 installed by `setup_vm.sh`.
 
 ## Contract changes (proposed → MASTER accepts/rejects)
