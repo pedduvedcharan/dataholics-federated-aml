@@ -257,6 +257,7 @@ def write_json_atomic(path: str, obj) -> None:
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
     with os.fdopen(fd, "w") as f:
         json.dump(obj, f, indent=1)
+    os.chmod(tmp, 0o644)  # mkstemp creates 0600; dashboard and host readers need read access
     os.replace(tmp, path)
 
 
