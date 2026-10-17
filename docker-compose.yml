@@ -128,6 +128,7 @@ services:
   llm:
     # GENAI (accepted by MASTER 13:10): llama.cpp built from source for s390x, serves a big-endian GGUF on :8080.
     # One-off weights fetch (676 MB, stays out of the image):  docker compose run --rm llm /app/fetch_model.sh
+    # Without weights this container exits 1; genai then falls back to the template engine (depends_on required: false).
     # RAM ~0.7 GB + KV cache: do NOT run while the five banks train; start it for scene 6 only.
     image: fedaml-llm
     build:
@@ -156,6 +157,7 @@ services:
     depends_on:
       llm:
         condition: service_healthy
+        required: false        # INFRA fix 4 (15:40): llm exits 1 without weights; genai must still run with SAR_ENGINE=template
     environment:
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
