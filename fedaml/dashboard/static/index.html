@@ -116,7 +116,7 @@
   </section>
 
   <section class="panel" id="p-train">
-    <h2>2 · Training — global AUC per round <span class="note" id="train-note"></span></h2>
+    <h2>2 · Training — global model AUC per round <span class="note" id="train-note"></span></h2>
     <div class="chartbox"><canvas id="aucChart"></canvas></div>
     <div class="legendrow" id="auc-legend"></div>
     <div id="train-table" style="margin-top:6px; max-height: 96px; overflow:auto;"></div>
@@ -144,6 +144,11 @@
 
 </div>
 
+<footer class="panel wide" id="p-evidence" style="margin-top:12px">
+  <h2>Evidence — where every number on this page comes from <span class="note" id="ev-note"></span></h2>
+  <div id="ev-body" class="waiting">waiting for /api/state</div>
+</footer>
+
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -151,7 +156,7 @@ const fmtInt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('
 const f3 = x => (x == null || isNaN(x)) ? '—' : Number(x).toFixed(3);
 const f2 = x => (x == null || isNaN(x)) ? '—' : Number(x).toFixed(2);
 const kb = b => b == null ? '—' : (b < 1024 ? b + ' B' : (b / 1024).toFixed(1) + ' KB');
-const hhmmss = iso => { try { return new Date(iso).toLocaleTimeString('en-GB', {hour12:false}); } catch (e) { return '—'; } };
+const hhmmss = iso => { try { return new Date(iso).toLocaleTimeString('en-GB', {hour12:false, timeZone:'UTC'}); } catch (e) { return '—'; } };
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 function setPill(id, info, label) {
@@ -218,18 +223,27 @@ function renderTraining(s) {
   const st = s.status, bl = s.baselines;
   const rounds = (st && Array.isArray(st.rounds)) ? st.rounds.filter(r => r && r.round != null) : [];
   const labels = rounds.map(r => 'r' + r.round);
-  const auc = rounds.map(r => r.global_auc);
+  const pooledKey = ['pooled_auc', 'pooled_bank_auc', 'bank_pooled_auc'].find(k => rounds.some(r => typeof r[k] === 'number'));
+  const pooledApKey = pooledKey ? pooledKey.replace('auc', 'ap') : null;
+  const auc = rounds.map(r => pooledKey ? r[pooledKey] : r.global_auc);
+  const mainLabel = pooledKey ? 'Global model · pooled per-bank test AUC' : 'Global model AUC (global_test, control only)';
+  const hasControl = pooledKey && rounds.some(r => typeof r.global_auc === 'number');
   const n = Math.max(labels.length, 2);
   const flat = v => Array(n).fill(v);
   const xs = labels.length >= 2 ? labels : (labels.length === 1 ? [labels[0], ''] : ['r1', 'r2']);
-  const datasets = [{ label: 'Global federated AUC', data: auc, borderColor: css('--s1'), backgroundColor: css('--s1'),
+  const datasets = [{ label: mainLabel, data: auc, borderColor: css('--s1'), backgroundColor: css('--s1'),
     borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.15, endLabel: auc.length ? f3(auc[auc.length - 1]) : '' }];
-  const legend = [{ c: css('--s1'), t: 'global federated AUC' }];
+  const legend = [{ c: css('--s1'), t: pooledKey ? 'global federated model, pooled per-bank test AUC' : 'global federated model AUC (global_test, control only)' }];
+  if (hasControl) {
+    datasets.push({ label: 'global_test (control only)', data: rounds.map(r => r.global_auc), borderColor: css('--s7'), borderWidth: 1, pointRadius: 2, borderDash: [2, 3], tension: 0.15 });
+    legend.push({ c: css('--s7'), t: 'same model on global_test.csv (control only)' });
+  }
   if (bl) {
-    const c = bl.centralized_logreg && bl.centralized_logreg.auc;
+    const cl = bl.centralized_logreg || {};
+    const c = typeof cl.pooled_auc === 'number' ? cl.pooled_auc : cl.auc;
     if (typeof c === 'number') {
       datasets.push({ label: 'Centralized ceiling', data: flat(c), borderColor: css('--s2'), borderWidth: 1.5, pointRadius: 0, borderDash: [6, 4], endLabel: f3(c) });
-      legend.push({ c: css('--s2'), t: 'centralized logreg ceiling (illegal pooling) ' + f3(c) });
+      legend.push({ c: css('--s2'), t: 'centralized logreg ceiling (illegal pooling) ' + f3(c) + (typeof cl.pooled_auc === 'number' ? '' : ' (global_test)') });
     }
     const locals = Object.entries(bl.per_bank || {}).map(([b, m]) => [b, bestLocal(m)]).filter(x => x[1]);
     locals.forEach(([b, v], i) => datasets.push({ label: `Bank ${b} best local (${v.model})`, data: flat(v.auc), borderColor: css('--muted'),
@@ -237,7 +251,7 @@ function renderTraining(s) {
     if (locals.length) legend.push({ c: css('--muted'), t: 'each bank alone, best of logreg/rf/hgb: ' + locals.map(([b, v]) => `b${b} ${f3(v.auc)}`).join(' · ') });
   }
   $('auc-legend').innerHTML = legend.map(l => `<span><span class="sw" style="border-color:${l.c}"></span>${esc(l.t)}</span>`).join('');
-  $('train-note').textContent = st ? `round ${st.round ?? '?'} of ${st.total_rounds ?? '?'}` + (st.dp && st.dp.enabled ? ' · DP on' : ' · DP off') : 'waiting for status.json';
+  $('train-note').textContent = st ? `round ${st.round ?? '?'} of ${st.total_rounds ?? '?'}` + (st.dp && st.dp.enabled ? ' · DP on' : ' · DP off') + (pooledKey ? ' · metric: pooled per-bank test.csv' : ' · metric: global_test.csv (control only)') : 'waiting for status.json';
 
   if (typeof Chart === 'undefined') { $('aucChart').parentElement.innerHTML = '<div class="waiting">Chart.js not loaded (no CDN access) — see table below</div>'; }
   else if (!aucChart) {
@@ -247,13 +261,14 @@ function renderTraining(s) {
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${f3(c.parsed.y)}` } } },
       scales: { x: { grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') } },
                 y: { min: 0.5, max: 1.0, grid: { color: css('--grid') }, ticks: { color: css('--muted'), stepSize: 0.1 }, border: { color: css('--axis') },
-                     title: { display: true, text: 'ROC AUC on global_test.csv', color: css('--muted'), font: { size: 11 } } } } } });
-  } else { aucChart.data.labels = xs; aucChart.data.datasets = datasets; aucChart.update('none'); }
+                     title: { display: true, text: pooledKey ? 'ROC AUC, pooled per-bank test' : 'ROC AUC, global_test (control)', color: css('--muted'), font: { size: 11 } } } } } });
+  } else { aucChart.data.labels = xs; aucChart.data.datasets = datasets; aucChart.options.scales.y.title.text = pooledKey ? 'ROC AUC, pooled per-bank test' : 'ROC AUC, global_test (control)'; aucChart.update('none'); }
 
   if (rounds.length) {
     const banks = Object.keys(rounds[rounds.length - 1].per_bank_auc || {});
-    $('train-table').innerHTML = `<table><tr><th>round</th><th class="num">global AUC</th><th class="num">AP</th>${banks.map(b => `<th class="num">b${esc(b)} AUC</th>`).join('')}</tr>` +
-      rounds.slice().reverse().map(r => `<tr><td>${esc(r.round)}</td><td class="num">${f3(r.global_auc)}</td><td class="num">${f3(r.global_ap)}</td>${banks.map(b => `<td class="num">${f3((r.per_bank_auc || {})[b])}</td>`).join('')}</tr>`).join('') + '</table>';
+    const aucHdr = pooledKey ? 'pooled AUC' : 'AUC (global_test, control)';
+    $('train-table').innerHTML = `<table><tr><th>round</th><th class="num">${aucHdr}</th><th class="num">AP</th>${hasControl ? '<th class="num">global_test (control)</th>' : ''}${banks.map(b => `<th class="num">b${esc(b)} AUC</th>`).join('')}</tr>` +
+      rounds.slice().reverse().map(r => `<tr><td>${esc(r.round)}</td><td class="num">${f3(pooledKey ? r[pooledKey] : r.global_auc)}</td><td class="num">${f3(pooledKey ? r[pooledApKey] : r.global_ap)}</td>${hasControl ? `<td class="num">${f3(r.global_auc)}</td>` : ''}${banks.map(b => `<td class="num">${f3((r.per_bank_auc || {})[b])}</td>`).join('')}</tr>`).join('') + '</table>';
   } else $('train-table').innerHTML = '<div class="waiting">no rounds completed yet</div>';
 }
 
@@ -308,21 +323,32 @@ function renderRedteam(s) {
   const rt = s.redteam;
   if (!rt) { $('red-body').className = 'waiting'; $('red-body').textContent = 'waiting for redteam.json (run: python -m fedaml.redteam …)'; return; }
   const off = rt.dp_off || {}, on = rt.dp_on || {};
+  const target = rt.target || 'laundering';                    // headline population
+  const other = target === 'laundering' ? 'all' : 'laundering';
+  const det = rt.detail || {};
+  const otherRes = side => ((((det[side] || {}).targets || {})[other] || {}).result) || null;
+  const oOff = otherRes('dp_off'), oOn = otherRes('dp_on');
   const accOff = off.attack_acc, accOn = on.attack_acc;
+  const fileVerdict = typeof on.verdict === 'string' ? on.verdict.toUpperCase() : null;  // PROTECTED | WEAK LEAK | LEAKS
   let vcls = 'warn', vtxt = 'red-team results incomplete';
   if (typeof accOff === 'number' && typeof accOn === 'number') {
     const drop = accOff - accOn;
-    if (accOn <= 0.55) { vcls = 'good'; vtxt = `✔ PROTECTED — with DP the attacker guesses membership at ${(accOn * 100).toFixed(0)}% (coin flip = 50%), down from ${(accOff * 100).toFixed(0)}%`; }
-    else if (drop >= 0.03) { vcls = 'warn'; vtxt = `▲ PARTIAL — DP cut attack accuracy by ${(drop * 100).toFixed(0)} points, still ${(accOn * 100).toFixed(0)}%`; }
-    else { vcls = 'bad'; vtxt = `✖ EXPOSED — DP did not reduce attack accuracy (${(accOff * 100).toFixed(0)}% → ${(accOn * 100).toFixed(0)}%)`; }
+    const who = target === 'laundering' ? 'a laundering row' : 'a row';
+    if (fileVerdict === 'PROTECTED' || (!fileVerdict && accOn <= 0.55)) { vcls = 'good'; vtxt = `✔ PROTECTED — with DP the attacker tells whether ${who} was in a bank's training set at ${(accOn * 100).toFixed(0)}% accuracy (coin flip = 50%), down from ${(accOff * 100).toFixed(0)}%`; }
+    else if (fileVerdict === 'WEAK LEAK' || (!fileVerdict && drop >= 0.03)) { vcls = 'warn'; vtxt = `▲ WEAK LEAK — DP cut attack accuracy by ${(drop * 100).toFixed(0)} points, still ${(accOn * 100).toFixed(0)}%`; }
+    else { vcls = 'bad'; vtxt = `✖ LEAKS — attack accuracy ${(accOff * 100).toFixed(0)}% → ${(accOn * 100).toFixed(0)}% with DP on`; }
   }
   const row = (k, a, b, f) => `<tr><td>${k}</td><td class="num">${f(a)}</td><td class="num">${f(b)}</td></tr>`;
+  const foot = (oOff || oOn)
+    ? `${other} rows (${other === 'all' ? 'control, 1-in-1000 base rate' : 'secondary'}): DP off acc ${f3(oOff && oOff.attack_acc)} / AUC ${f3(oOff && oOff.attack_auc)} · DP on acc ${f3(oOn && oOn.attack_acc)} / AUC ${f3(oOn && oOn.attack_auc)}`
+    : `${other} rows: not recorded in redteam.json`;
   $('red-body').className = '';
-  $('red-body').innerHTML = `<table><tr><th>attack: ${esc(rt.attack || '?')}</th><th class="num">DP off</th><th class="num">DP on</th></tr>
+  $('red-body').innerHTML = `<table><tr><th>attack: ${esc(rt.attack || '?')} · target: <b>${esc(target)} rows</b>${rt.members ? ' · members: ' + esc(rt.members) : ''}</th><th class="num">DP off</th><th class="num">DP on</th></tr>
     ${row('attack accuracy (0.5 = chance)', accOff, accOn, f3)}
     ${row('attack AUC', off.attack_auc, on.attack_auc, f3)}
-    ${row('samples attacked', off.n, on.n, fmtInt)}
+    ${row('rows attacked per class', off.n, on.n, fmtInt)}
     ${row('model AUC (utility cost)', rt.model_auc_off, rt.model_auc_on, f3)}</table>
+    <div style="color:var(--muted); font-size:11px; margin-top:4px">${esc(foot)}</div>
     <div class="verdict ${vcls}">${esc(vtxt)}</div>`;
 }
 
@@ -342,6 +368,29 @@ function renderFootprint(s) {
       <dt>Machine</dt><dd>${esc(fp.arch || '?')} · ${esc(fp.cpu_count ?? '?')} cores · IBM LinuxONE Community Cloud</dd></dl></div>`;
 }
 
+/* ---------- evidence footer ---------- */
+function renderEvidence(s) {
+  const f = s.files || {};
+  const age = name => { const i = f[name]; if (!i) return '—'; if (!i.present) return 'missing'; return i.mtime ? `${i.mtime.replace('T', ' ').replace('+00:00', 'Z')} (${Math.round(i.age_s)}s ago, ${kb(i.bytes)})` : 'present'; };
+  const st = s.status || {}; const rounds = Array.isArray(st.rounds) ? st.rounds : [];
+  const pooled = ['pooled_auc', 'pooled_bank_auc', 'bank_pooled_auc'].find(k => rounds.some(r => typeof r[k] === 'number'));
+  const rogueSrc = (rounds.some(r => (r.excluded || []).length) || !s.status_rogue_on) ? 'status.json' : 'status_rogue_on.json';
+  const rt = s.redteam || {};
+  const rows = [
+    ['1 · Regulator view', `${s.logs_dir || 'logs/egress'}/bank_<id>.jsonl`, 'kind=model_update → messages, bytes, params_shared, rows_shared; kind=blocked → blocked attempts; tail = last 10 lines by ts', (f['logs/egress'] && f['logs/egress'].present) ? `${f['logs/egress'].n_files} file(s)` : 'missing'],
+    ['2 · Training', `${s.state_dir || 'state'}/status.json`, pooled ? `rounds[].${pooled}, rounds[].${pooled.replace('auc', 'ap')}, rounds[].per_bank_auc` + (rounds.some(r => typeof r.global_auc === 'number') ? '; rounds[].global_auc as control' : '') : 'rounds[].global_auc, rounds[].global_ap, rounds[].per_bank_auc (global_test control; pooled key not written yet)', age('status.json')],
+    ['2 · Training (reference lines)', `${s.state_dir || 'state'}/baselines.json`, 'per_bank.<id>.{logreg,rf,hgb}.auc (best per bank), centralized_logreg.pooled_auc or .auc', age('baselines.json')],
+    ['3 · Privacy budget', `${s.state_dir || 'state'}/status.json`, `dp.epsilon_spent, dp.sigma, dp.clip_norm, dp.delta, round/total_rounds · budget ${s.eps_budget} is a dashboard setting (--eps-budget), not a measurement`, age('status.json')],
+    ['4 · Rogue bank', `${s.state_dir || 'state'}/${rogueSrc}`, 'rounds[].accepted, rounds[].excluded[].{bank_id,reason,score}' + (s.status_rogue_off ? '; final global_auc of status_rogue_off.json vs status_rogue_on.json' : ''), age(rogueSrc)],
+    ['5 · Red team', `${s.state_dir || 'state'}/redteam.json`, `attack, target (headline = ${rt.target || 'laundering'} rows), dp_off/dp_on.{attack_acc,attack_auc,n,verdict}, model_auc_off/on; footnote from detail.dp_off|dp_on.targets.<other>.result`, age('redteam.json')],
+    ['6 · Footprint', `${s.state_dir || 'state'}/footprint.json`, 'per_container_peak_rss_mb, seconds_per_round, total_runtime_s, cpu_count, arch', age('footprint.json')],
+  ];
+  $('ev-note').textContent = `served from ${location.host} · state=${s.state_dir || 'state'} logs=${s.logs_dir || 'logs/egress'} · page time ${hhmmss(s.now)} UTC`;
+  $('ev-body').className = '';
+  $('ev-body').innerHTML = `<table style="font-size:11px"><tr><th>panel</th><th>file (on the VM)</th><th>keys used</th><th>file written</th></tr>` +
+    rows.map(r => `<tr><td>${esc(r[0])}</td><td style="font-family:ui-monospace,Menlo,monospace">${esc(r[1])}</td><td>${esc(r[2])}</td><td>${esc(r[3])}</td></tr>`).join('') + '</table>';
+}
+
 /* ---------- loop ---------- */
 let failures = 0;
 async function tick() {
@@ -357,7 +406,7 @@ async function tick() {
     setPill('pill-footprint', f['footprint.json'], 'footprint.json');
     $('pill-live').className = 'pill on live'; $('pill-live').innerHTML = '<span class="dot"></span>live · ' + hhmmss(s.now) + ' UTC';
     $('banner').style.display = (s.status && s.status.synthetic_sample) ? 'block' : 'none';
-    renderRegulator(s); renderTraining(s); renderPrivacy(s); renderRogue(s); renderRedteam(s); renderFootprint(s);
+    renderRegulator(s); renderTraining(s); renderPrivacy(s); renderRogue(s); renderRedteam(s); renderFootprint(s); renderEvidence(s);
   } catch (e) {
     failures++;
     $('pill-live').className = 'pill offline'; $('pill-live').innerHTML = '<span class="dot"></span>offline · ' + esc(e.message);
