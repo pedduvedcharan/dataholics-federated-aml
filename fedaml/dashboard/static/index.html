@@ -88,6 +88,8 @@
   body.solo header, body.solo #banner-keep-hidden { display: none; }
   body.solo .grid > .panel:not(.solo-on), body.solo footer.panel:not(.solo-on) { display: none; }
   body.solo .panel.solo-on { grid-column: 1 / -1; }
+  body.solo .panel.solo-on [style*="max-height"] { max-height: none !important; overflow: visible !important; }
+  body.solo .reg { grid-template-columns: 1fr 1fr 1fr 1fr 3fr; }
   @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } .reg { grid-template-columns: 1fr 1fr; } .foot { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -219,6 +221,10 @@ const endLabel = {  // direct-label the last point of selected datasets
     ctx.restore();
   }
 };
+function rogueSet(st) {   // the designated rogue bank(s): status.rogue_bank(s) if written, else bank 5 (CONTRACTS §2)
+  const ids = (st && (st.rogue_banks || (st.rogue_bank != null ? [st.rogue_bank] : null))) || [5];
+  return new Set(ids.map(String));
+}
 function yMin(datasets) {   // zoom the y-axis to the data (floor 0.5) so lines near 0.98 do not stack into one
   const v = datasets.flatMap(d => d.data).filter(x => typeof x === 'number');
   if (!v.length) return 0.5;
@@ -246,7 +252,8 @@ function renderTraining(s) {
   const evalTxt = evalBanks ? `banks ${evalBanks.join(',')}` : 'banks';
   const mainLabel = pooledKey ? `Global model · AUC pooled over ${evalTxt}' test sets` : 'Global model AUC (global_test, control only)';
   const hasControl = pooledKey && pooledKey !== 'global_auc' && rounds.some(r => typeof r.global_auc === 'number');
-  const rogueIds = new Set(); rounds.forEach(r => (r.excluded || []).forEach(e => rogueIds.add(String(e.bank_id))));
+  const rogueIds = rogueSet(st);
+  const exCount = {}; rounds.forEach(r => (r.excluded || []).forEach(e => { exCount[e.bank_id] = (exCount[e.bank_id] || 0) + 1; }));
   const notLearnable = b => !!(evalBanks && !evalBanks.includes(String(b)) && !rogueIds.has(String(b)));
   const isRogue = b => rogueIds.has(String(b));
   const n = Math.max(labels.length, 2);
@@ -295,7 +302,7 @@ function renderTraining(s) {
     const banks = Object.keys(rounds[rounds.length - 1].per_bank_auc || {});
     const aucHdr = pooledKey ? `pooled AUC (${evalTxt})` : 'AUC (global_test, control)';
     const nl = banks.filter(notLearnable), rg = banks.filter(isRogue);
-    const note = (nl.length || rg.length) ? `<div style="color:var(--muted); font-size:11px; margin:4px 0 2px">${nl.length ? `* bank ${nl.join(', ')}: AUC ≈ 0.5 is real, not a bug — its laundering is not learnable with per-row features (see docs); excluded from the pooled score (eval_banks = ${evalBanks.join(',')}). ` : ''}${rg.length ? `† bank ${rg.join(', ')}: rogue, its update was excluded by the defense (score shown is its own poisoned model).` : ''}</div>` : '';
+    const note = (nl.length || rg.length) ? `<div style="color:var(--muted); font-size:11px; margin:4px 0 2px">${nl.length ? `* bank ${nl.join(', ')}: AUC ≈ 0.5 is real, not a bug — its laundering is not learnable with per-row features (see docs); excluded from the pooled score (eval_banks = ${evalBanks.join(',')})${nl.some(b => exCount[b]) ? '; also excluded by the defense in ' + nl.filter(b => exCount[b]).map(b => `${exCount[b]}/${rounds.length} rounds`).join(', ') : ''}. ` : ''}${rg.length ? `† bank ${rg.join(', ')}: the rogue bank (synthetic attack); the score shown is its own poisoned model${rg.some(b => exCount[b]) ? ', excluded by the defense in ' + rg.map(b => `${exCount[b] || 0}/${rounds.length}`).join(', ') + ' rounds' : ''}.` : ''}</div>` : '';
     $('train-table').innerHTML = note + `<table><tr><th>round</th><th class="num">${aucHdr}</th><th class="num">AP</th>${hasControl ? '<th class="num">global_test (control)</th>' : ''}${banks.map(b => `<th class="num">b${esc(b)} AUC${notLearnable(b) ? ' *' : isRogue(b) ? ' †' : ''}</th>`).join('')}</tr>` +
       rounds.slice().reverse().map(r => `<tr><td>${esc(r.round)}</td><td class="num">${f3(pooledKey ? r[pooledKey] : r.global_auc)}</td><td class="num">${f3(pooledKey ? r[pooledApKey] : r.global_ap)}</td>${hasControl ? `<td class="num">${f3(r.global_auc)}</td>` : ''}${banks.map(b => `<td class="num">${f3((r.per_bank_auc || {})[b])}</td>`).join('')}</tr>`).join('') + '</table>';
   } else $('train-table').innerHTML = '<div class="waiting">no rounds completed yet</div>';
@@ -328,7 +335,9 @@ function renderPrivacy(s) {
       <dt>Rounds composed</dt><dd>${esc(st.round ?? '—')} of ${esc(st.total_rounds ?? '—')}</dd>
       ${dp.enabled && (dp.mode || dp.noise_added_by) ? `<dt>DP mode</dt><dd>${esc(dp.mode || '')}${dp.noise_added_by ? ' · noise added by ' + esc(dp.noise_added_by) : ''}</dd>` : ''}
     </dl>
-    <p style="color:var(--muted); font-size:12px; margin:10px 0 0">${!dp.enabled ? 'This run has DP off: updates are clipped but not noised, so no ε is spent. It exists as the unprotected comparison for the red team. ' : ''}Approximate, update-level Gaussian composition over rounds; the coordinator adds the noise (DP-FedAvg). Per-record guarantees would need DP-SGD inside each bank (stretch). Each bank clips its weight delta to the L2 norm above before it reaches the egress door${dp.noise_added_by === 'coordinator' ? '; the coordinator adds calibrated Gaussian noise to every accepted update before averaging' : '; noise is added before egress'}. ε grows with every round; the bar fills toward the run's planned total.${dp.epsilon_note ? ' Coordinator note: ' + esc(dp.epsilon_note) : ''}</p>`;
+    <p style="color:var(--muted); font-size:12px; margin:10px 0 0">${!dp.enabled
+      ? 'This run has DP off: updates are clipped but not noised, so no ε is spent. It is the unprotected comparison for the red team.'
+      : 'Approximate, update-level Gaussian composition over rounds; the coordinator adds the noise (DP-FedAvg). Per-record guarantees would need DP-SGD inside each bank (stretch). Each bank clips its weight delta to the L2 norm above before it reaches the egress door' + (dp.noise_added_by === 'coordinator' ? '; the coordinator adds calibrated Gaussian noise to every accepted update before averaging' : '; noise is added before egress') + '. ε grows with every round; the bar fills toward the run\'s planned total.' + (dp.epsilon_note ? ' Coordinator note: ' + esc(dp.epsilon_note) : '')}</p>`;
 }
 
 /* ---------- 4. rogue bank ---------- */
@@ -338,8 +347,9 @@ function renderRogue(s) {
   if (!hasEx(st) && hasEx(s.status_rogue_on)) { st = s.status_rogue_on; src = 'status_rogue_on.json'; }
   const rounds = (st && Array.isArray(st.rounds)) ? st.rounds : [];
   if (!rounds.length) { $('rogue-body').className = 'waiting'; $('rogue-body').textContent = 'waiting for completed rounds'; return; }
+  const rogues = rogueSet(st);
   const exCount = {}; rounds.forEach(r => (r.excluded || []).forEach(e => { exCount[e.bank_id] = (exCount[e.bank_id] || 0) + 1; }));
-  const summary = Object.entries(exCount).map(([b, c]) => `bank ${b} excluded in ${c}/${rounds.length} rounds`).join(' · ') || 'no exclusions so far';
+  const summary = Object.entries(exCount).map(([b, c]) => `${rogues.has(String(b)) ? 'rogue ' : 'honest '}bank ${b} excluded in ${c}/${rounds.length} rounds`).join(' · ') || 'no exclusions so far';
   let cmp = '';
   const off = s.status_rogue_off, on = s.status_rogue_on;
   const lastAuc = x => (x && Array.isArray(x.rounds) && x.rounds.length) ? x.rounds[x.rounds.length - 1].global_auc : null;
@@ -351,7 +361,7 @@ function renderRogue(s) {
     rounds.slice().reverse().map(r => {
       const ex = r.excluded || [];
       if (!ex.length) return `<tr><td>${esc(r.round)}</td><td>${esc((r.accepted || []).join(', '))}</td><td><span class="tag ok">none</span></td><td></td><td></td></tr>`;
-      return ex.map((e, i) => `<tr class="ex"><td>${i ? '' : esc(r.round)}</td><td>${i ? '' : esc((r.accepted || []).join(', '))}</td><td><span class="tag bad">✖ bank ${esc(e.bank_id)}</span></td><td>${esc(e.reason || '')}</td><td class="num">${f3(e.score)}</td></tr>`).join('');
+      return ex.map((e, i) => `<tr class="ex"><td>${i ? '' : esc(r.round)}</td><td>${i ? '' : esc((r.accepted || []).join(', '))}</td><td>${rogues.has(String(e.bank_id)) ? `<span class="tag bad">✖ bank ${esc(e.bank_id)} · rogue</span>` : `<span class="tag warn">▲ bank ${esc(e.bank_id)} · honest</span>`}</td><td>${esc(e.reason || '')}</td><td class="num">${f3(e.score)}</td></tr>`).join('');
     }).join('') + '</table></div>';
 }
 
