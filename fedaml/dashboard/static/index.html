@@ -214,9 +214,13 @@ const endLabel = {  // direct-label the last point of selected datasets
     ctx.restore();
   }
 };
-function bestLocal(bank) {  // best single-model AUC for a bank from baselines.json
+function bestLocal(bank) {  // best single-model AUC for a bank from baselines.json, pooled basis (own-test .auc as fallback)
   let best = null;
-  for (const [m, v] of Object.entries(bank || {})) if (v && typeof v.auc === 'number' && (!best || v.auc > best.auc)) best = { model: m, auc: v.auc };
+  for (const [m, v] of Object.entries(bank || {})) {
+    if (!v || typeof v !== 'object') continue;
+    const a = typeof v.pooled_auc === 'number' ? v.pooled_auc : v.auc;
+    if (typeof a === 'number' && (!best || a > best.auc)) best = { model: m, auc: a, basis: typeof v.pooled_auc === 'number' ? 'pooled' : 'own test' };
+  }
   return best;
 }
 function renderTraining(s) {
@@ -240,15 +244,21 @@ function renderTraining(s) {
   }
   if (bl) {
     const cl = bl.centralized_logreg || {};
-    const c = typeof cl.pooled_auc === 'number' ? cl.pooled_auc : cl.auc;
+    const c = typeof cl.auc === 'number' ? cl.auc : cl.pooled_auc;   // MODELS: centralized .auc IS the pooled number
     if (typeof c === 'number') {
       datasets.push({ label: 'Centralized ceiling', data: flat(c), borderColor: css('--s2'), borderWidth: 1.5, pointRadius: 0, borderDash: [6, 4], endLabel: f3(c) });
-      legend.push({ c: css('--s2'), t: 'centralized logreg ceiling (illegal pooling) ' + f3(c) + (typeof cl.pooled_auc === 'number' ? '' : ' (global_test)') });
+      legend.push({ c: css('--s2'), t: 'centralized logreg ceiling (illegal pooling) ' + f3(c) });
+    }
+    const fd = bl.federated || {};
+    const fv = typeof fd.auc === 'number' ? fd.auc : fd.pooled_auc;
+    if (typeof fv === 'number') {
+      datasets.push({ label: 'Federated final (baselines.json)', data: flat(fv), borderColor: css('--s3'), borderWidth: 1.5, pointRadius: 0, borderDash: [2, 3] });
+      legend.push({ c: css('--s3'), t: 'federated final model as scored by MODELS ' + f3(fv) });
     }
     const locals = Object.entries(bl.per_bank || {}).map(([b, m]) => [b, bestLocal(m)]).filter(x => x[1]);
-    locals.forEach(([b, v], i) => datasets.push({ label: `Bank ${b} best local (${v.model})`, data: flat(v.auc), borderColor: css('--muted'),
+    locals.forEach(([b, v], i) => datasets.push({ label: `Bank ${b} best local (${v.model}, ${v.basis})`, data: flat(v.auc), borderColor: css('--muted'),
       borderWidth: 1, pointRadius: 0, endLabel: i === 0 ? 'one bank' : '', endOffset: 0 }));
-    if (locals.length) legend.push({ c: css('--muted'), t: 'each bank alone, best of logreg/rf/hgb: ' + locals.map(([b, v]) => `b${b} ${f3(v.auc)}`).join(' · ') });
+    if (locals.length) legend.push({ c: css('--muted'), t: `each bank alone (${locals[0][1].basis} basis), best of logreg/rf/hgb: ` + locals.map(([b, v]) => `b${b} ${f3(v.auc)}`).join(' · ') });
   }
   $('auc-legend').innerHTML = legend.map(l => `<span><span class="sw" style="border-color:${l.c}"></span>${esc(l.t)}</span>`).join('');
   $('train-note').textContent = st ? `round ${st.round ?? '?'} of ${st.total_rounds ?? '?'}` + (st.dp && st.dp.enabled ? ' · DP on' : ' · DP off') + (pooledKey ? ' · metric: pooled per-bank test.csv' : ' · metric: global_test.csv (control only)') : 'waiting for status.json';
@@ -379,7 +389,7 @@ function renderEvidence(s) {
   const rows = [
     ['1 · Regulator view', `${s.logs_dir || 'logs/egress'}/bank_<id>.jsonl`, 'kind=model_update → messages, bytes, params_shared, rows_shared; kind=blocked → blocked attempts; tail = last 10 lines by ts', (f['logs/egress'] && f['logs/egress'].present) ? `${f['logs/egress'].n_files} file(s)` : 'missing'],
     ['2 · Training', `${s.state_dir || 'state'}/status.json`, pooled ? `rounds[].${pooled}, rounds[].${pooled.replace('auc', 'ap')}, rounds[].per_bank_auc` + (rounds.some(r => typeof r.global_auc === 'number') ? '; rounds[].global_auc as control' : '') : 'rounds[].global_auc, rounds[].global_ap, rounds[].per_bank_auc (global_test control; pooled key not written yet)', age('status.json')],
-    ['2 · Training (reference lines)', `${s.state_dir || 'state'}/baselines.json`, 'per_bank.<id>.{logreg,rf,hgb}.auc (best per bank), centralized_logreg.pooled_auc or .auc', age('baselines.json')],
+    ['2 · Training (reference lines)', `${s.state_dir || 'state'}/baselines.json`, 'per_bank.<id>.{logreg,rf,hgb}.pooled_auc (best per bank; .auc = own test, fallback only), centralized_logreg.auc and federated.auc (both pooled basis)', age('baselines.json')],
     ['3 · Privacy budget', `${s.state_dir || 'state'}/status.json`, `dp.epsilon_spent, dp.sigma, dp.clip_norm, dp.delta, round/total_rounds · budget ${s.eps_budget} is a dashboard setting (--eps-budget), not a measurement`, age('status.json')],
     ['4 · Rogue bank', `${s.state_dir || 'state'}/${rogueSrc}`, 'rounds[].accepted, rounds[].excluded[].{bank_id,reason,score}' + (s.status_rogue_off ? '; final global_auc of status_rogue_off.json vs status_rogue_on.json' : ''), age(rogueSrc)],
     ['5 · Red team', `${s.state_dir || 'state'}/redteam.json`, `attack, target (headline = ${rt.target || 'laundering'} rows), dp_off/dp_on.{attack_acc,attack_auc,n,verdict}, model_auc_off/on; footnote from detail.dp_off|dp_on.targets.<other>.result`, age('redteam.json')],

@@ -54,10 +54,10 @@ def main() -> None:
         "detail": {"dp_off": {"targets": {"all": {"result": {"attack_acc": 0.503, "attack_auc": 0.505, "n": 20000}}}},
                    "dp_on": {"targets": {"all": {"result": {"attack_acc": 0.499, "attack_auc": 0.501, "n": 20000}}}}}})
     write(state / "baselines.json", {
-        "per_bank": {str(b): {"logreg": {"auc": 0.74 + 0.02 * b, "ap": 0.05},
-                              "rf": {"auc": 0.78 + 0.01 * b, "ap": 0.07},
-                              "hgb": {"auc": 0.80 + 0.01 * b, "ap": 0.08}} for b in range(1, 5)},
-        "federated": {"auc": 0.87, "ap": 0.10}, "centralized_logreg": {"auc": 0.82, "ap": 0.10, "pooled_auc": 0.90, "pooled_ap": 0.12}})
+        "per_bank": {str(b): {"logreg": {"auc": 0.74 + 0.02 * b, "ap": 0.05, "pooled_auc": 0.70 + 0.02 * b, "pooled_ap": 0.04},
+                              "rf": {"auc": 0.78 + 0.01 * b, "ap": 0.07, "pooled_auc": 0.75 + 0.01 * b, "pooled_ap": 0.06},
+                              "hgb": {"auc": 0.80 + 0.01 * b, "ap": 0.08, "pooled_auc": 0.77 + 0.01 * b, "pooled_ap": 0.07}} for b in range(1, 5)},
+        "federated": {"auc": 0.87, "ap": 0.10}, "centralized_logreg": {"auc": 0.90, "ap": 0.12}})
     write(state / "footprint.json", {
         "per_container_peak_rss_mb": {"coordinator": 412, "bank1": 790, "bank2": 745,
                                       "bank3": 702, "bank4": 688, "rogue": 655, "dashboard": 61},
