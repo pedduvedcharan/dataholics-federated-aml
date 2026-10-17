@@ -230,6 +230,19 @@ Partition runtime 17s, peak RSS 563 MB, seed 42.
 - Oct 17 12:00: idea locked (cross-bank AML, federated). Additions accepted: regulator view (#2), rogue bank (#4). Paillier and ML-DSA are stretch.
 
 ## Numbers for the slides (file of origin required)
+- **[16:20 FEDERATION] CANONICAL host-side finals, mu 0.1 (MASTER GO 16:10), seed 42, 10 rounds, prox trainer, clip 1.0, tau 1.5, cumulative rule, `~/fedaml/state/` on the VM. Supersedes the mu 0.5 tables below; those files are in `~/fedaml/archive/finals_mu05/`.** Pooled over banks 2,3,4.
+
+  | file | DP | pooled AUC r10 | AP r10 | approx eps | bank 1 accepted | bank 5 excluded | bank 5 own AUC | model sha256 |
+  |---|---|---|---|---|---|---|---|---|
+  | `status_dpoff.json` | off | **0.992** | 0.248 | – | 7/10 | – | – | f12fcda7… |
+  | `status_dpon.json` = `status_dpon_s05.json` | local sigma 0.5 | **0.982** | 0.065 | 46.2 | 10/10 | – | – | 16ef90c0… |
+  | `status_dpon_s03.json` (sweep row) | local sigma 0.3 | 0.987 | 0.093 | 99.7 | 10/10 | – | – | 23bb0128… |
+  | `status_rogue_off.json` | off, defense off | **0.953** | 0.071 | – | 10/10 | 0/10 | 0.927 | 433e8822… |
+  | `status_rogue_on.json` | off, defense on | **0.992** | 0.250 | – | 10/10 | 10/10 | 0.986 | 449f767f… |
+
+  - **sigma 0.5 at mu 0.1 sits just below centralized pooling:** 0.982 vs 0.983 AUC, and AP 0.065 vs 0.088. Price of the DP setting the red team rates PROTECTED.
+  - **The rogue scene changed with mu 0.1. Decision needed.** Defense off now costs only 0.039 AUC (0.953 vs 0.992), not the old 0.500, and the rogue's own laundering stays visible (own AUC 0.927, was 0.23). Why: with mu 0.1 honest banks' raw update norms (~1.4) exceed the clip, so every honest update arrives at norm 1.0, the same as the rogue's clipped update; at the 2x-median weight cap the rogue holds 0.295 of the weight against 0.705 honest, so it cannot reverse the average. At mu 0.5 honest norms were 0.15–0.6 and the norm-1 rogue dominated. The defense still excludes bank 5 in 10/10 rounds and restores 0.992. Honest framing: "clipping and the sample-count cap already bound a single rogue's damage to 0.04 AUC; the screen removes the rest". Options: (a) ship that framing with these files; (b) keep the dramatic 0.500 scene from `archive/finals_mu05/` labelled "mu 0.5 run" (inconsistent trainer, must say so); (c) a stronger rogue (e.g. several colluding rogues) — not built, not tested. FEDERATION recommends (a).
+  - FEDERATION made no further runs after these; port 8000 free, no federation processes (checked 21:09 UTC). If the compose integration run differs in any digit, treat the integration run as canonical (MASTER 16:10).
 - **[16:05 FEDERATION] FINAL federation files on the VM (`~/fedaml/state/`, all from code bd87b9a rules, seed 42, 10 rounds; FEDERATION is now OFF the VM, port 8000 free):**
 
   | file | pooled AUC r10 | AP r10 | bank 1 accepted | banks 2–4 accepted | rogue excluded |
