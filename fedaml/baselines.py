@@ -7,15 +7,18 @@ training rows concatenated: the upper bound that is illegal in practice.
 
 Writes ``state/baselines.json``::
 
-    {"per_bank": {"1": {"logreg": {"auc", "ap", "own_auc", "own_ap", "global_auc", "global_ap"}, ...}},
-     "federated": {"auc", "ap", "n", "per_bank": {id: {"auc","ap"}}, "global_auc", "global_ap"} | null,
-     "centralized_logreg": {"auc", "ap", "per_bank": {...}, "global_auc", "global_ap"},
+    {"per_bank": {"1": {"logreg": {"auc", "ap", "pooled_auc", "pooled_ap", "global_auc", "global_ap"}, ...}},
+     "federated": {"auc", "ap", "n", "pooled_auc", "pooled_ap", "per_bank": {id: {"auc","ap"}},
+                   "global_auc", "global_ap"} | null,
+     "centralized_logreg": {"auc", "ap", "n", "pooled_auc", "pooled_ap", "per_bank": {...},
+                            "global_auc", "global_ap"},
      "meta": {...}}
 
-``auc``/``ap`` everywhere are on the **pooled** basis: each bank's ``test.csv``
-featurized within that bank, predictions pooled. ``global_auc``/``global_ap`` score
-``global_test.csv`` (the red team's control; its mixed-bank account aggregates are
-systematically smaller, so it reads lower).
+Per-bank model entries: ``auc``/``ap`` on the bank's **own** test.csv, ``pooled_*`` on
+the pooled per-bank test sets (CONTRACTS section 6). ``federated`` and
+``centralized_logreg``: ``auc``/``ap`` ARE the pooled numbers. ``global_*`` scores
+``global_test.csv`` (the red team's distribution-shift control; its mixed-bank
+account aggregates are systematically smaller, so it reads lower).
 
 ``evaluate_model_pooled(path, bank_ids)`` and ``evaluate_model_json(path)`` are the
 shared evaluators for FEDERATION, REDTEAM and the dashboard.
@@ -167,7 +170,8 @@ def _score_all(model, tests: dict, Xg: np.ndarray, yg: np.ndarray) -> dict:
     """Pooled (headline) and global_test (control) metrics for a fitted sklearn model."""
     pooled = pooled_metrics({b: model.predict_proba(X)[:, 1] for b, (X, _) in tests.items()}, tests)
     glob = metrics(yg, model.predict_proba(Xg)[:, 1])
-    return {"auc": pooled["auc"], "ap": pooled["ap"], "per_bank": pooled["per_bank"],
+    return {"auc": pooled["auc"], "ap": pooled["ap"], "n": pooled["n"],
+            "pooled_auc": pooled["auc"], "pooled_ap": pooled["ap"], "per_bank": pooled["per_bank"],
             "global_auc": glob["auc"], "global_ap": glob["ap"]}
 
 
@@ -175,10 +179,12 @@ def run_baselines(banks: list[int], data_dir: Path, max_rows: int, seed: int, n_
                   models: list[str], centralized: bool = True) -> dict:
     """Train/evaluate every (bank, model) and the centralized ceiling.
 
-    Every model is scored on the same **pooled** basis (each bank's test.csv
-    featurized within that bank, predictions pooled) -> ``auc``/``ap``; the
-    model's own-bank slice is ``own_auc``/``own_ap``; ``global_test.csv`` is kept
-    as ``global_auc``/``global_ap`` for the red team's control.
+    Key layout (CONTRACTS section 6, Oct 17 13:15): per-bank model entries carry
+    ``auc``/``ap`` on the bank's **own** test.csv plus ``pooled_auc``/``pooled_ap``
+    (each bank's test.csv featurized within that bank, predictions pooled);
+    ``centralized_logreg`` and ``federated`` carry ``auc``/``ap`` on the pooled
+    basis (duplicated as ``pooled_*``). ``global_auc``/``global_ap`` everywhere is
+    ``global_test.csv``, the red team's distribution-shift control only.
     """
     Xg, yg = load_global_test(data_dir=data_dir)
     tests = load_bank_tests(banks, data_dir=data_dir)
@@ -207,12 +213,12 @@ def run_baselines(banks: list[int], data_dir: Path, max_rows: int, seed: int, n_
             dt = time.time() - t0
             sc = _score_all(model, tests, Xg, yg)
             own = sc["per_bank"][str(b)]
-            result["per_bank"][str(b)][key] = {"auc": sc["auc"], "ap": sc["ap"],
-                                               "own_auc": own["auc"], "own_ap": own["ap"],
+            result["per_bank"][str(b)][key] = {"auc": own["auc"], "ap": own["ap"],
+                                               "pooled_auc": sc["auc"], "pooled_ap": sc["ap"],
                                                "global_auc": sc["global_auc"], "global_ap": sc["global_ap"]}
             result["meta"]["fit_seconds"][str(b)][key] = round(dt, 1)
-            log.info("bank %d %-6s pooled auc=%.4f ap=%.4f | own auc=%.4f ap=%.4f | global auc=%.4f ap=%.4f (%.1fs)",
-                     b, key, sc["auc"], sc["ap"], own["auc"], own["ap"], sc["global_auc"], sc["global_ap"], dt)
+            log.info("bank %d %-6s own auc=%.4f ap=%.4f | pooled auc=%.4f ap=%.4f | global auc=%.4f ap=%.4f (%.1fs)",
+                     b, key, own["auc"], own["ap"], sc["auc"], sc["ap"], sc["global_auc"], sc["global_ap"], dt)
         del Xtr
     if centralized and all_X:
         Xc = np.concatenate(all_X); yc = np.concatenate(all_y)
@@ -235,6 +241,7 @@ def attach_federated(result: dict, model_path: Path, data_dir: Path) -> dict:
     if model_path.exists():
         fed = evaluate_model_pooled(model_path, data_dir=data_dir, tests=tests)
         glob = evaluate_model_json(model_path, data_dir=data_dir)
+        fed["pooled_auc"], fed["pooled_ap"] = fed["auc"], fed["ap"]
         fed["global_auc"], fed["global_ap"] = glob["auc"], glob["ap"]
         result["federated"] = fed
         result["meta"]["federated_model"] = str(model_path)
@@ -258,21 +265,21 @@ def _fmt(v: float | None) -> str:
 
 def markdown_table(result: dict) -> str:
     """Markdown table: pooled basis (headline), own-bank slice, global_test control."""
-    lines = ["| Model | Train data | Pooled AUC | Pooled AP | Own-bank AUC | Own-bank AP | global_test AUC | global_test AP |",
+    lines = ["| Model | Train data | Own-test AUC | Own-test AP | Pooled AUC | Pooled AP | global_test AUC | global_test AP |",
              "|---|---|---|---|---|---|---|---|"]
     for b, per in result["per_bank"].items():
         for key, m in per.items():
             lines.append(f"| {key} | bank {b} only | {_fmt(m['auc'])} | {_fmt(m['ap'])} "
-                         f"| {_fmt(m['own_auc'])} | {_fmt(m['own_ap'])} "
+                         f"| {_fmt(m['pooled_auc'])} | {_fmt(m['pooled_ap'])} "
                          f"| {_fmt(m['global_auc'])} | {_fmt(m['global_ap'])} |")
     c = result.get("centralized_logreg")
     if c:
-        lines.append(f"| **centralized logreg (illegal ceiling)** | all banks pooled | {_fmt(c['auc'])} | {_fmt(c['ap'])} "
-                     f"| – | – | {_fmt(c['global_auc'])} | {_fmt(c['global_ap'])} |")
+        lines.append(f"| **centralized logreg (illegal ceiling)** | all banks pooled | – | – "
+                     f"| {_fmt(c['auc'])} | {_fmt(c['ap'])} | {_fmt(c['global_auc'])} | {_fmt(c['global_ap'])} |")
     fed = result.get("federated")
     if fed:
-        lines.append(f"| **federated logreg (ours)** | no rows leave any bank | {_fmt(fed['auc'])} | {_fmt(fed['ap'])} "
-                     f"| – | – | {_fmt(fed.get('global_auc'))} | {_fmt(fed.get('global_ap'))} |")
+        lines.append(f"| **federated logreg (ours)** | no rows leave any bank | – | – "
+                     f"| {_fmt(fed['auc'])} | {_fmt(fed['ap'])} | {_fmt(fed.get('global_auc'))} | {_fmt(fed.get('global_ap'))} |")
     return "\n".join(lines)
 
 
