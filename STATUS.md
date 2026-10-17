@@ -85,6 +85,8 @@ Partition runtime 17s, peak RSS 563 MB, seed 42.
 7. Containers run as root: everything they write to `state/` and `logs/` is root-owned, and `state/alerts.json` is mode 0600 (GENAI's writer) -> unreadable by `linux1` on the host (dashboard container reads it fine as root). `scripts/reset_run.sh` now falls back to `sudo rm`. Option for MASTER: `user: "1000:1000"` in `x-common`.
 8. Note: `footprint.json` `seconds_per_round` now comes from the coordinator's `status.json` (0.61 s synthetic); the file-mtime estimate (2.0 s, includes bank poll interval) is kept as `seconds_per_round_from_mtimes`.
 
+- **16:35 INFRA: `scripts/reset_run.sh` now ARCHIVES instead of deleting.** `run_demo.sh` (and `reset_run.sh`) move everything in `state/` and run logs to `~/fedaml/archive/<UTC timestamp>/` first, so MODELS' `baselines.json`, GENAI's `alerts.json`, REDTEAM's `redteam*.json` and FEDERATION's sweep models survive a rehearsal. Restore with `cp archive/<ts>/state/<file> state/`. `archive/` is gitignored.
+
 **`scripts/run_demo.sh` (for MASTER's rehearsal):** `cd ~/fedaml && scripts/run_demo.sh` = preflight (data, image, ports) -> `reset_run.sh --down` -> `footprint.sh start` -> DP-off run (DEFENSE on) -> DP-on run (the demo model) -> `docker ps`/`docker stats` text to `submission/screenshots/02_docker_ps.txt` -> tryleak -> attacker -> alerts -> genai -> `footprint.sh stop`. Flags `--skip-off --no-reset --no-tools`; knobs `ROUNDS EPOCHS SIGMA CLIP SEED BANKS ROGUE_* ALERT_ID SAR_ENGINE WAIT_MAX`. Dashboard stays up afterwards.
 
 ## Blockers

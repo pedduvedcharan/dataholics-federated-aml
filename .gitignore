@@ -14,3 +14,5 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+# reset_run.sh archives previous runs here (VM)
+archive/
