@@ -62,6 +62,44 @@ def check_account_ids(text: str, alert: dict) -> list[str]:
     return sorted(set(bad))
 
 
+NUMBER_WORDS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten".split())}
+COUNTED = re.compile(r"\b(\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:\w+\s+){0,2}?"
+                     r"(payments?|transactions?|accounts?|receivers?|counterpart(?:y|ies)|institutions?|banks?|"
+                     r"payers?|transfers?)\b", re.I)
+
+
+OTHER_PAYMENTS = re.compile(r"\b(\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten)\s+other\s+"
+                            r"(?:payments?|transactions?|transfers?)\b", re.I)
+
+
+def allowed_counts(alert: dict, facts: dict[str, str]) -> set[int]:
+    """Every count the code-written sections state: chain counts plus decoded count features."""
+    from fedaml.llm.facts import feature_fact
+
+    nums = {int(facts[k]) for k in ("N_SENDER_OTHER", "N_DISTINCT_RECEIVERS", "N_RECEIVER_ONWARD", "N_ROWS", "N_BANKS")
+            if str(facts.get(k, "")).isdigit()}
+    for f in alert.get("top_features", []):
+        nums |= {int(x) for x in re.findall(r"\b\d+\b", feature_fact(f))}
+    return nums | {1}  # "one payment" = the trigger itself
+
+
+def drop_unsupported_counts(text: str, alert: dict, facts: dict[str, str]) -> str:
+    """Remove LLM sentences that state a count the facts do not contain (e.g. 'two other payments' when 1)."""
+    ok = allowed_counts(alert, facts)
+    kept = []
+    for sent in re.split(r"(?<=[.!?])\s+", text):
+        found = [m.group(1).lower() for m in COUNTED.finditer(sent)]
+        vals = [int(x) if x.isdigit() else NUMBER_WORDS[x] for x in found]
+        other = [m.group(1).lower() for m in OTHER_PAYMENTS.finditer(sent)]
+        other_bad = any((int(x) if x.isdigit() else NUMBER_WORDS[x]) != int(facts.get("N_SENDER_OTHER", -1))
+                        for x in other)
+        if other_bad or any(v not in ok for v in vals):
+            log.info("dropped LLM sentence with unsupported count %s: %s", vals, sent[:120])
+            continue
+        kept.append(sent)
+    return " ".join(kept).strip()
+
+
 def llm_sections(alert: dict, facts: dict[str, str], *, max_tokens: int, temperature: float,
                  timeout: float, seed: int) -> tuple[dict[str, str], dict]:
     """Code writes the facts; the LLM adds one assessment paragraph. Raises on any guardrail failure."""
@@ -73,7 +111,7 @@ def llm_sections(alert: dict, facts: dict[str, str], *, max_tokens: int, tempera
                           temperature=temperature, timeout=timeout, seed=seed)
     finally:
         client.stop()
-    text = fill_placeholders(parse_response(res.text)["assessment"], facts)
+    text = drop_unsupported_counts(fill_placeholders(parse_response(res.text)["assessment"], facts), alert, facts)
     leftover = sorted(set(re.findall(r"\[[A-Z_]+\]", text)))
     if leftover:
         raise ValueError(f"unknown placeholders in LLM output: {leftover}")
