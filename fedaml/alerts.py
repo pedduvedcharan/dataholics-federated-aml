@@ -10,7 +10,7 @@ regulator-side held-out set (CONTRACTS §2), so chains may span several banks.
 
 Output schema (CONTRACTS §6, agents/06-GENAI.md):
     [{"alert_id", "score", "rank", "model_sha256", "trigger": {row}, "rows": [<=10 rows],
-      "banks_involved": [...], "accounts": [...], "top_features": [{"name","value","weight","contribution"}],
+      "banks_involved": [codes], "institutions": [{"code","label","role","rows"}], "accounts": [...], "top_features": [{"name","value","weight","contribution"}],
       "chain_summary": {"n_rows","total_amt_paid","sender_other_txns","receiver_onward_txns"}}]
 """
 from __future__ import annotations
@@ -38,7 +38,8 @@ def load_model(path: str) -> dict:
         m = json.load(f)
     if "sha256" in m:
         body = {k: m[k] for k in ("coef", "intercept", "feature_names") if k in m}
-        digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+        digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"),
+                                           allow_nan=False).encode()).hexdigest()
         if digest != m["sha256"]:
             log.warning("model sha256 in file (%s...) differs from recomputed (%s...); "
                         "using the file's value", m["sha256"][:12], digest[:12])
@@ -65,13 +66,15 @@ def _row_dict(r: pd.Series) -> dict:
         if c not in r.index:
             continue
         v = r[c]
-        if isinstance(v, (np.integer,)):
+        if isinstance(v, (np.integer, np.bool_)):
             v = int(v)
+        elif pd.isna(v):
+            v = None
         elif isinstance(v, (np.floating,)):
             v = round(float(v), 2)
         elif isinstance(v, pd.Timestamp):
             v = v.isoformat()
-        out[c] = v if not (isinstance(v, float) and np.isnan(v)) else None
+        out[c] = v
     return out
 
 
@@ -104,7 +107,43 @@ def top_features(x: np.ndarray, coef: np.ndarray, names: list[str], k: int = 5) 
              "contribution": round(float(contrib[i]), 4)} for i in order if x[i] != 0.0 or i == order[0]]
 
 
-def build_alerts(df: pd.DataFrame, model: dict, top: int = 20, max_rows: int = 10) -> list[dict]:
+def _bank_key(b: str) -> tuple[int, str]:
+    return (int(b), b) if b.isdigit() else (10**9, b)
+
+
+def load_bank_labels(path: str) -> dict[str, str]:
+    """``data/bank_map.json`` (INFRA) -> {from_bank code: "bank <id> (<role>)"}; {} if absent."""
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        bm = json.load(f)
+    out: dict[str, str] = {}
+    for bid, meta in (bm.get("banks") or {}).items():
+        code = meta.get("from_bank", meta.get("code"))
+        if code is not None:
+            role = meta.get("role")
+            out[str(code)] = f"bank {bid}" + (f" ({role})" if role else "")
+    return out
+
+
+def institutions(rows: list[dict], banks: list[str], labels: dict[str, str]) -> list[dict]:
+    """One entry per bank code in the chain: federation label (if any), role, rows touching it."""
+    trig = rows[0]
+    out = []
+    for b in banks:
+        roles = []
+        if b == str(trig["from_bank"]):
+            roles.append("sender's bank")
+        if b == str(trig["to_bank"]):
+            roles.append("receiver's bank")
+        n = sum(1 for r in rows if str(r["from_bank"]) == b or str(r["to_bank"]) == b)
+        out.append({"code": b, "label": labels.get(b), "role": ", ".join(roles) or "counterparty / downstream",
+                    "rows": n})
+    return out
+
+
+def build_alerts(df: pd.DataFrame, model: dict, top: int = 20, max_rows: int = 10,
+                 bank_labels: dict[str, str] | None = None) -> list[dict]:
     """Score every row, take the top ``top`` by probability, attach chain + attribution."""
     p, X = score(df, model)
     coef = np.asarray(model["coef"], dtype=np.float64)
@@ -114,7 +153,7 @@ def build_alerts(df: pd.DataFrame, model: dict, top: int = 20, max_rows: int = 1
     for rank, pos in enumerate(order, start=1):
         idx = df.index[pos]
         rows, n_s, n_r = gather_chain(df, idx, max_rows)
-        banks = sorted({int(r["from_bank"]) for r in rows} | {int(r["to_bank"]) for r in rows})
+        banks = sorted({str(r["from_bank"]) for r in rows} | {str(r["to_bank"]) for r in rows}, key=_bank_key)
         accounts = sorted({str(r["from_acct"]) for r in rows} | {str(r["to_acct"]) for r in rows})
         alerts.append({
             "alert_id": f"A{rank:02d}",
@@ -125,6 +164,7 @@ def build_alerts(df: pd.DataFrame, model: dict, top: int = 20, max_rows: int = 1
             "trigger": rows[0],
             "rows": rows,
             "banks_involved": banks,
+            "institutions": institutions(rows, banks, bank_labels or {}),
             "accounts": accounts,
             "top_features": top_features(X[pos], coef, names),
             "chain_summary": {
@@ -155,15 +195,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--top", type=int, default=20)
     ap.add_argument("--max-rows", type=int, default=10)
     ap.add_argument("--nrows", type=int, default=None, help="read only the first N rows (debug)")
+    ap.add_argument("--bank-map", default=None, help="data/bank_map.json (default: next to --test)")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     np.random.seed(args.seed)
 
-    df = pd.read_csv(args.test, nrows=args.nrows)
+    from fedaml.features import read_csv  # string dtypes for bank codes and account ids
+
+    df = read_csv(args.test, nrows=args.nrows)
+    labels = load_bank_labels(args.bank_map or os.path.join(os.path.dirname(args.test) or ".", "bank_map.json"))
     log.info("loaded %s: %d rows, laundering rate %.5f", args.test, len(df), df["is_laundering"].mean())
     model = load_model(args.model)
-    alerts = build_alerts(df, model, args.top, args.max_rows)
+    alerts = build_alerts(df, model, args.top, args.max_rows, labels)
     write_json_atomic(args.out, alerts)
     hit = sum(int(a["trigger"].get("is_laundering") or 0) for a in alerts)
     log.info("wrote %d alerts to %s (top score %.4f, %d/%d triggers are labelled laundering)",

@@ -80,20 +80,17 @@ def llm_sections(alert: dict, facts: dict[str, str], *, max_tokens: int, tempera
 
 
 def institutions_table(alert: dict) -> str:
-    """Code-generated table: one row per bank id in the chain with its role and row count."""
-    trig = alert["trigger"]
-    counts: dict[int, int] = {}
-    for r in alert["rows"]:
-        for key in ("from_bank", "to_bank"):
-            counts[int(r[key])] = counts.get(int(r[key]), 0) + 1
-    lines = ["| Bank id | Role | Chain rows touching it |", "|---|---|---|"]
-    for b in alert.get("banks_involved", sorted(counts)):
-        roles = []
-        if int(b) == int(trig["from_bank"]):
-            roles.append("sender's bank")
-        if int(b) == int(trig["to_bank"]):
-            roles.append("receiver's bank")
-        lines.append(f"| {b} | {', '.join(roles) or 'downstream / counterparty'} | {counts.get(int(b), 0)} |")
+    """Code-generated table: one row per bank code in the chain with its role and row count."""
+    lines = ["| Bank code | Federation label | Role | Chain rows touching it |", "|---|---|---|---|"]
+    insts = alert.get("institutions")
+    if not insts:  # older alerts.json without the institutions list
+        trig = alert["trigger"]
+        insts = [{"code": b, "label": None, "rows": sum(1 for r in alert["rows"] if b in (str(r["from_bank"]), str(r["to_bank"]))),
+                  "role": ", ".join(x for x, ok in (("sender's bank", b == str(trig["from_bank"])),
+                                                    ("receiver's bank", b == str(trig["to_bank"]))) if ok) or "counterparty / downstream"}
+                 for b in alert.get("banks_involved", [])]
+    for i in insts:
+        lines.append(f"| {i['code']} | {i.get('label') or 'outside the federation'} | {i['role']} | {i['rows']} |")
     return "\n".join(lines)
 
 

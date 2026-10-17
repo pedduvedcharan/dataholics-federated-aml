@@ -38,9 +38,18 @@ FEATURE_GLOSSARY: dict[str, tuple[str, str]] = {
 
 
 def glossary(name: str) -> tuple[str, str]:
-    """Look up a feature by name, tolerant to case and spaces (``fmt_Credit Card``)."""
+    """(plain-English description, what a positive contribution means) for a feature.
+
+    Description comes from MODELS' ``FEATURE_DESCRIPTIONS`` when available; the meaning is ours.
+    """
     key = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
-    return FEATURE_GLOSSARY.get(key, (name, f"{name} is high"))
+    desc, meaning = FEATURE_GLOSSARY.get(key, (name, f"{name} is high"))
+    try:
+        from fedaml.features import FEATURE_DESCRIPTIONS
+        desc = FEATURE_DESCRIPTIONS.get(name, desc)
+    except ImportError:  # features module not present (tests)
+        pass
+    return desc, meaning
 
 
 def _fmt_amt(v: float | None) -> str:
@@ -91,8 +100,10 @@ def indicator_lines(alert: dict) -> list[str]:
     out = []
     for f in alert.get("top_features", []):
         desc, meaning = glossary(f["name"])
-        direction = "raises" if f.get("contribution", 0) > 0 else "lowers"
-        out.append(f"{desc}: {meaning}; this {direction} the laundering score")
+        if float(f.get("contribution", 0)) > 0:
+            out.append(f"{desc}: {meaning}; this raises the laundering score")
+        else:
+            out.append(f"{desc}: this transaction is unremarkable on this feature; it slightly lowers the score")
     return out
 
 
@@ -109,8 +120,12 @@ def template_sections(alert: dict, facts: dict[str, str]) -> dict[str, str]:
     bullets = []
     for f in alert.get("top_features", []):
         desc, meaning = glossary(f["name"])
-        sign = "+" if f.get("contribution", 0) >= 0 else ""
-        bullets.append(f"- **{f['name']}** ({desc}): {meaning}; contribution {sign}{f['contribution']:.3f}.")
+        c = float(f.get("contribution", 0))
+        if c >= 0:
+            bullets.append(f"- **{f['name']}** ({desc}): {meaning}; raises the score, contribution +{c:.3f}.")
+        else:
+            bullets.append(f"- **{f['name']}** ({desc}): points the other way for this transaction; "
+                           f"lowers the score, contribution {c:.3f}.")
     indicators = "\n".join(bullets) if bullets else "- No single dominant indicator; the score is spread across features."
     action = (
         "Place a review hold on account [SENDER] at bank [SENDER_BANK] and request the account-opening "
