@@ -36,7 +36,7 @@ sandboxed containers from **one image** on a single IBM LinuxONE VM (s390x, 3 co
 | `dashboard` | The "regulator view": live egress counters, AUC per round against single-bank baselines, privacy-budget meter, rogue exclusions, red-team table, footprint. Port 8050, host-only. | `fedaml/dashboard/` |
 | `attacker` | Membership-inference red team (loss-threshold, shadow model, IBM ART black-box) against the global model with DP off vs DP on. | `fedaml/redteam.py` |
 | `llm` + `genai` | llama.cpp serving a big-endian GGUF of Qwen2.5-0.5B-Instruct; the SAR writer fills prose only, code inserts every number, id and model hash; template fallback. | `fedaml/llm/`, `fedaml/sar.py`, `fedaml/alerts.py` |
-| features / baselines | 20 per-row features that need **no cross-bank statistics**; per-bank LogReg / Random Forest / HistGradientBoosting comparison and the centralized "illegal upper bound". | `fedaml/features.py`, `fedaml/baselines.py`, `docs/FEATURES.md` |
+| features / baselines | 20 per-row features that need **no cross-bank statistics**; per-bank LogReg / Random Forest / HistGradientBoosting comparison and the "centralized pooling" model trained on all banks' raw rows (what TMNL did). | `fedaml/features.py`, `fedaml/baselines.py`, `docs/FEATURES.md` |
 
 What leaves a bank each round: one JSON message of about 21 numbers (clipped, noised weight delta), its hash, and
 the feature-list hash. What never leaves: transactions, account ids, amounts, labels. The egress log proves it.
@@ -76,10 +76,11 @@ All numbers come from files written on the VM. Placeholders are replaced only fr
 
 | Measurement | Value | File of origin |
 |---|---|---|
-| Best single-bank model AUC (own test set) | {{BEST_SINGLE_AUC}} | `state/baselines.json` |
-| Centralized logistic regression AUC (illegal upper bound, pooled test) | {{CENTRAL_AUC}} | `state/baselines.json` |
-| Federated global model AUC, DP on, pooled per-bank test | {{AUC_FINAL}} | `state/status.json` |
-| Federated global model AUC, DP off | {{AUC_FINAL_DPOFF}} | `state/status_dpoff.json` |
+| Best single-bank model, pooled test over banks 2–4 (AUC / AP) | {{BEST_SINGLE_AUC}} / {{BEST_SINGLE_AP}} | `state/baselines.json` |
+| Centralized pooling logistic regression, all four banks' raw rows (AUC / AP) | {{CENTRAL_AUC}} / {{CENTRAL_AP}} | `state/baselines.json` |
+| Federated global model, DP on, pooled test over banks 2–4 (AUC / AP) | {{AUC_FINAL}} / {{FED_AP}} | `state/status_dpon.json`, `state/baselines.json` |
+| Federated global model, DP off (AUC / AP) | {{AUC_FINAL_DPOFF}} / {{FED_AP_DPOFF}} | `state/status_dpoff.json` |
+| Bank 1 (code 070), any model, own test set | ≈ 0.5 (not learnable with per-row features, see §6) | `state/baselines.json` |
 | Transaction rows shared by all banks, all rounds | 0 | `logs/egress/bank_*.jsonl` |
 | Model parameters shared per round per bank | {{PARAMS_SHARED}} | `logs/egress/bank_*.jsonl` |
 | Rogue bank excluded in N of R rounds (defense on) | {{ROGUE_EXCLUDED_ROUNDS}} / {{ROUNDS}} | `state/status_rogue_on.json` |
@@ -89,8 +90,11 @@ All numbers come from files written on the VM. Placeholders are replaced only fr
 | LLM generation speed on s390x | 27.3 tok/s mean (100 tokens, 3 threads) | `state/llm_runtime.json` |
 | Peak RAM, all containers / seconds per round / total runtime | {{PEAK_RSS_MB}} MB / {{SEC_PER_ROUND}} s / {{TOTAL_RUNTIME}} | `state/footprint.json` |
 
-How to read it: the federated model should land between the best single bank and the centralized ceiling, with
-the DP-on model paying a small AUC cost for collapsing the attack to chance.
+How to read it: the federated model **matches the best single bank on AUC** and **beats centralized pooling on average
+precision** (more true laundering per alert), while banks whose own detectors are weak receive the strong model
+without sharing a row. The DP-on model pays a small AUC cost for collapsing the membership attack to chance.
+Bank 1's laundering (cheque, card and cash from fifteen sender accounts) carries no per-row signal, so every model,
+including centralized pooling, scores at chance on it; it trains with the federation and is reported on its own.
 
 ## 5. Open-source software and data
 
