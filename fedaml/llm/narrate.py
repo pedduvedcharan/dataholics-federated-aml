@@ -49,13 +49,14 @@ def build_user_prompt(alert: dict) -> str:
         f"Model indicators, strongest first:\n{indicators}\n\n"
         f"Token meanings: {PLACEHOLDER_HELP}.\n\n"
         "Return JSON with exactly these keys:\n"
-        '{"summary": "Account [SENDER] at bank [SENDER_BANK] ... <3 sentences: what was paid to [RECEIVER] at bank '
-        "[RECEIVER_BANK], what the sender and receiver did around it ([N_SENDER_OTHER], [N_DISTINCT_RECEIVERS], "
-        '[N_RECEIVER_ONWARD]), and the size of the chain ([N_ROWS] transactions, [TOTAL_AMT], [N_BANKS] institutions)>",\n'
-        ' "pattern_indicators": ["<one plain-English sentence per indicator above, for a compliance officer, '
-        'in your own words>", ...],\n'
-        ' "recommended_action": "<2-3 sentences of concrete next steps for the compliance officer at bank '
-        '[SENDER_BANK], mentioning account [SENDER] and the other institutions [BANKS]>"}'
+        '{"summary": "Account [SENDER] at bank [SENDER_BANK] ... <at most 70 words, 3 sentences: what was paid to '
+        "[RECEIVER] at bank [RECEIVER_BANK], what the sender and receiver did around it ([N_SENDER_OTHER], "
+        "[N_DISTINCT_RECEIVERS], [N_RECEIVER_ONWARD]), and the chain size ([N_ROWS] transactions, [TOTAL_AMT], "
+        '[N_BANKS] institutions)>",\n'
+        ' "pattern_indicators": ["<one sentence of at most 15 words per indicator above, in your own words>", ...],\n'
+        ' "recommended_action": "<at most 50 words: concrete next steps for the compliance officer at bank '
+        '[SENDER_BANK] about account [SENDER] and the other institutions [BANKS]>"}\n'
+        "Keep the whole answer under 250 words."
     )
 
 
@@ -75,10 +76,7 @@ def _norm(s: str) -> str:
 
 def parse_response(text: str) -> dict[str, str]:
     """Extract the JSON object; join list fields into markdown bullets. Raises ValueError."""
-    m = re.search(r"\{.*\}", text, flags=re.S)
-    if not m:
-        raise ValueError("no JSON object in LLM output")
-    obj = json.loads(m.group(0))
+    obj = _load_json_lenient(text)
     out: dict[str, str] = {}
     for key in ("summary", "pattern_indicators", "recommended_action"):
         v = obj.get(key)
@@ -93,6 +91,26 @@ def parse_response(text: str) -> dict[str, str]:
         if tok not in out["summary"]:
             raise ValueError(f"LLM summary does not reference {tok}")
     return out
+
+
+def _load_json_lenient(text: str) -> dict:
+    """Parse the first JSON object; if generation was cut off at max_tokens, try to close it."""
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("no JSON object in LLM output")
+    body = text[start:]
+    end = body.rfind("}")
+    candidates = [body[:end + 1]] if end > 0 else []
+    stripped = body.rstrip().rstrip(",")
+    candidates += [stripped + suffix for suffix in ('"}', '"]}', "}", "]}", '"}}')]
+    for c in candidates:
+        try:
+            obj = json.loads(c)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    raise ValueError("unparseable or truncated JSON in LLM output")
 
 
 def _dedupe_sentences(text: str) -> str:
