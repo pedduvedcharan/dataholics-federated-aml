@@ -5,8 +5,10 @@
 #   scripts/run_demo.sh --skip-off      only the DP-on run (attacker is skipped unless global_final_dpoff.json already exists)
 #   scripts/run_demo.sh --no-reset      keep existing state/ and logs/
 #   scripts/run_demo.sh --no-tools      stop after training (dashboard stays up)
+#   scripts/run_demo.sh --no-rogue      4 honest banks only: BANKS=1,2,3,4, rogue service not started (MASTER 16:20 fallback:
+#                                       the rogue scene then comes from archived DP-off files; status_rogue_on.json is NOT written)
 #
-# Knobs are the compose env vars: ROUNDS EPOCHS SIGMA CLIP TAU SEED BANKS EVAL_BANKS TRAINER ROGUE_ATTACK ROGUE_FACTOR ALERT_ID SAR_ENGINE.
+# Knobs are the compose env vars: ROUNDS EPOCHS SIGMA DP_MODE CLIP TAU SEED BANKS EVAL_BANKS TRAINER ROGUE_ATTACK ROGUE_FACTOR ALERT_ID SAR_ENGINE.
 # TAG is set per phase (dpoff, dpon) so the coordinator writes state/global_final_<tag>.json itself.
 # WAIT_MAX (default 1800 s) bounds each training phase. COMPOSE_EXTRA adds compose flags (e.g. "-f smoke/override.yml").
 # Both runs keep DEFENSE on so the DP off/on comparison differs in DP only (REDTEAM's request).
@@ -17,14 +19,15 @@ set -uo pipefail
 cd "${FEDAML_ROOT:-$(dirname "$0")/..}"
 DC="docker compose ${COMPOSE_EXTRA:-}"
 WAIT_MAX="${WAIT_MAX:-1800}"
-DO_OFF=1; DO_RESET=1; DO_TOOLS=1
+DO_OFF=1; DO_RESET=1; DO_TOOLS=1; DO_ROGUE=1
 for a in "$@"; do
   case "$a" in
-    --skip-off) DO_OFF=0 ;; --no-reset) DO_RESET=0 ;; --no-tools) DO_TOOLS=0 ;;
+    --skip-off) DO_OFF=0 ;; --no-reset) DO_RESET=0 ;; --no-tools) DO_TOOLS=0 ;; --no-rogue) DO_ROGUE=0 ;;
     *) echo "unknown flag $a"; exit 2 ;;
   esac
 done
 TRAIN_SVCS="coordinator bank1 bank2 bank3 bank4 rogue"
+if [ "$DO_ROGUE" = 0 ]; then TRAIN_SVCS="coordinator bank1 bank2 bank3 bank4"; export BANKS="${BANKS:-1,2,3,4}"; fi
 log() { printf '\n[run_demo %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { log "FAIL: $*"; $DC logs --tail 30 coordinator 2>/dev/null | tail -30; exit 1; }
 
@@ -67,8 +70,8 @@ wait_final() {  # $1 = epoch the phase started
 
 run_phase() {  # $1 = tag (dpoff|dpon), $2 = DP value
   local tag="$1" dp="$2" t; t=$(date +%s)
-  log "phase $tag: DP=$dp DEFENSE=on ROUNDS=${ROUNDS:-10} BANKS=${BANKS:-1,2,3,4,5}"
-  $DC rm -fs $TRAIN_SVCS >/dev/null 2>&1 || true
+  log "phase $tag: DP=$dp DP_MODE=${DP_MODE:-local} SIGMA=${SIGMA:-0.3} DEFENSE=on ROUNDS=${ROUNDS:-10} BANKS=${BANKS:-1,2,3,4,5} EVAL_BANKS=${EVAL_BANKS:-2,3,4} rogue=$([ "$DO_ROGUE" = 1 ] && echo on || echo off)"
+  $DC rm -fs $TRAIN_SVCS rogue >/dev/null 2>&1 || true
   DP="$dp" DEFENSE=on TAG="$tag" $DC up -d $TRAIN_SVCS dashboard || die "docker compose up failed"
   sleep 3
   wait_final "$t"
@@ -89,7 +92,7 @@ PY
 # ---------------------------------------------------------------- training runs
 [ "$DO_OFF" = 1 ] && run_phase dpoff off
 run_phase dpon on
-[ -f state/status_rogue_on.json ] || cp state/status.json state/status_rogue_on.json   # defense on: rogue exclusions visible to the dashboard
+[ "$DO_ROGUE" = 1 ] && [ ! -f state/status_rogue_on.json ] && cp state/status.json state/status_rogue_on.json   # defense on: rogue exclusions visible to the dashboard
 
 # screenshots (text) while the training containers still exist
 { echo "\$ docker ps"; docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"; echo;
@@ -110,7 +113,7 @@ if [ "$DO_TOOLS" = 1 ]; then
   $DC run --rm genai || log "genai failed (exit $?)"
 fi
 
-$DC stop $TRAIN_SVCS >/dev/null 2>&1 || true
+$DC stop $TRAIN_SVCS rogue >/dev/null 2>&1 || true
 log "footprint"
 scripts/footprint.sh stop
 log "done in $(( $(date +%s) - T_START ))s. state/:"; ls -la state | grep -v '^total'
