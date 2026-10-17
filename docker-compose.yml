@@ -43,6 +43,8 @@ services:
     container_name: coordinator
     # FEDERATION flags verified 15:30 (fedaml/coordinator.py): --host defaults 0.0.0.0, --seed, --tag, --eval-banks, --tau, --round-timeout, --linger.
     # TAG names the run: dpoff | dpon | rogue_off | rogue_on  -> state/global_final_<tag>.json + state/status_<tag>.json (MASTER decision 15:30)
+    # TAU 1.5 (FEDERATION 5f93293, real shards): honest banks 2-4 cosine-distance-to-median 0.02-0.32, honest bank 1 0.94-1.33 (orthogonal, unlearnable data),
+    # scaled rogue 1.84 (opposed). tau 1.5 excludes updates that OPPOSE the consensus, not banks that merely disagree.
     command: >
       python3 -m fedaml.coordinator
       --rounds ${ROUNDS:-10}
@@ -52,7 +54,7 @@ services:
       --sigma ${SIGMA:-0.8}
       --clip ${CLIP:-1.0}
       --defense ${DEFENSE:-on}
-      --tau ${TAU:-0.8}
+      --tau ${TAU:-1.5}
       --round-timeout ${ROUND_TIMEOUT:-120}
       --tag "${TAG:-}"
       --seed ${SEED:-42}
