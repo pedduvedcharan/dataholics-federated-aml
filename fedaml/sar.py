@@ -68,17 +68,19 @@ def llm_sections(alert: dict, facts: dict[str, str], *, max_tokens: int, tempera
         raise LLMUnavailable(f"no llama-server reachable at {client.url}")
     try:
         res = client.chat(SYSTEM_PROMPT, build_user_prompt(alert), max_tokens=max_tokens,
-                          temperature=temperature, timeout=timeout, seed=seed, json_mode=True)
+                          temperature=temperature, timeout=timeout, seed=seed)
     finally:
         client.stop()
     sections = parse_response(res.text)
     meta: dict = {}
     tmpl = template_sections(alert, facts)
-    if echoes_input(sections["pattern_indicators"], alert):
+    if not sections["pattern_indicators"]:
+        sections["pattern_indicators"] = tmpl["pattern_indicators"]  # by design: code writes the indicators
+    elif echoes_input(sections["pattern_indicators"], alert):
         # a small model often copies the indicator lines back; use the template bullets (with numbers) instead
         sections["pattern_indicators"] = tmpl["pattern_indicators"]
         meta["indicators_source"] = "template (LLM echoed the input lines)"
-    for key, min_words in (("summary", 25), ("recommended_action", 15)):
+    for key, min_words in (("summary", 30), ("recommended_action", 15)):
         if INSTRUCTION_ECHO.search(sections[key]):  # the model copied the prompt's instructions
             sections[key] = tmpl[key]
             meta[f"{key}_source"] = "template (LLM echoed the prompt instructions)"

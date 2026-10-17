@@ -63,8 +63,16 @@ def extract_facts(alert: dict, model: dict | None = None) -> dict[str, str]:
     receivers = {str(r["to_acct"]) for r in rows if r.get("role") in ("trigger", "sender_other")}
     ts = sorted(str(r["ts"]) for r in rows if r.get("ts"))
     cs = alert.get("chain_summary", {})
+    n_s, n_r = int(cs.get("sender_other_txns", 0)), int(cs.get("receiver_onward_txns", 0))
+    n_rcv = len(receivers - {str(trig["to_acct"])})
+    sender_activity = ("made no other payments in the review sample" if n_s == 0 else
+                       f"made {n_s} other payment{'s' * (n_s != 1)} to {n_rcv or 1} other receiver{'s' * (n_rcv != 1)}")
+    receiver_activity = ("has not moved the funds onward in the review sample" if n_r == 0 else
+                         f"moved funds onward in {n_r} payment{'s' * (n_r != 1)}")
     return {
         "ALERT_ID": str(alert["alert_id"]),
+        "SENDER_ACTIVITY": sender_activity,
+        "RECEIVER_ACTIVITY": receiver_activity,
         "SENDER": str(trig["from_acct"]),
         "RECEIVER": str(trig["to_acct"]),
         "SENDER_BANK": str(trig["from_bank"]),

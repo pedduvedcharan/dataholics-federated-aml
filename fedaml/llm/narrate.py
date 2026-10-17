@@ -21,28 +21,34 @@ SYSTEM_PROMPT = (
     "amount, date, bank name or statistic: refer to them ONLY with the placeholder tokens given in "
     "square brackets, exactly as written. Treat the transaction as high-risk: the cross-bank model ranked it "
     "among the most suspicious in the sample, and your recommendation is always to review it. Do not repeat "
-    "sentences. Output must be a single JSON object and nothing else."
+    "sentences. Answer with the SUMMARY and ACTION paragraphs only."
 )
 
+EXAMPLE = (
+    "SUMMARY: On [TS] account [SENDER] at bank [SENDER_BANK] sent [AMT] [CUR] by [FMT] to account [RECEIVER] at "
+    "bank [RECEIVER_BANK]. The sender [SENDER_ACTIVITY], and the receiver [RECEIVER_ACTIVITY]. Taken together, the "
+    "[N_ROWS] linked transactions worth [TOTAL_AMT] across [N_BANKS] institutions resemble funds being split and "
+    "passed between banks so that no single bank sees the whole movement.\n"
+    "ACTION: Escalate account [SENDER] for enhanced due diligence and obtain source-of-funds documentation. "
+    "Request information from banks [BANKS] on account [RECEIVER] and preserve the records pending a filing decision."
+)
+
+
 def build_user_prompt(alert: dict) -> str:
-    """User turn: the case described with placeholders plus the qualitative indicators (kept short)."""
+    """User turn: placeholder facts, qualitative indicators, one example of the expected two-paragraph answer."""
     lines = indicator_lines(alert)
     indicators = "\n".join(f"- {s}" for s in lines) or "- no dominant indicator"
     return (
-        "Case (tokens stand for values; use them verbatim):\n"
-        "- Account [SENDER] at bank [SENDER_BANK] paid [AMT] [CUR] by [FMT] to account [RECEIVER] at bank "
-        "[RECEIVER_BANK] on [TS].\n"
-        "- The sender made [N_SENDER_OTHER] other payments to [N_DISTINCT_RECEIVERS] receivers; the receiver made "
-        "[N_RECEIVER_ONWARD] onward payments.\n"
-        "- Chain: [N_ROWS] transactions, total [TOTAL_AMT], [N_BANKS] institutions (bank ids [BANKS]).\n"
-        "- Cross-bank model score [SCORE], rank [RANK] in the sample.\n"
-        f"Indicators, strongest first:\n{indicators}\n\n"
-        "Return JSON only:\n"
-        '{"summary": "Account [SENDER] at bank [SENDER_BANK] ... (3 sentences, under 70 words, mention [RECEIVER], '
-        'the sender/receiver activity and the chain size)",\n'
-        ' "pattern_indicators": ["one sentence under 15 words per indicator, in your own words", ...],\n'
-        ' "recommended_action": "under 50 words: next steps for the officer at bank [SENDER_BANK] about account '
-        '[SENDER] and the institutions [BANKS]"}'
+        "Facts (tokens in square brackets stand for real values; copy the tokens exactly):\n"
+        "- On [TS] account [SENDER] at bank [SENDER_BANK] paid [AMT] [CUR] by [FMT] to account [RECEIVER] at bank "
+        "[RECEIVER_BANK].\n"
+        "- The sender [SENDER_ACTIVITY]. The receiver [RECEIVER_ACTIVITY].\n"
+        "- Linked chain: [N_ROWS] transactions, [TOTAL_AMT] in total, [N_BANKS] institutions (banks [BANKS]).\n"
+        "- The jointly trained cross-bank model ranks this transaction [RANK] of the sample.\n"
+        f"Why the model flagged it, strongest reason first:\n{indicators}\n\n"
+        "Write two short paragraphs in this exact format, explaining the reasons above in your own words:\n"
+        "SUMMARY: <three or four sentences>\nACTION: <two sentences>\n\n"
+        f"Example of the format for a different case:\n{EXAMPLE}"
     )
 
 
@@ -60,13 +66,28 @@ def _norm(s: str) -> str:
     return re.sub(r"\W+", " ", s).strip().lower()
 
 
+def _labelled(text: str) -> dict | None:
+    """Parse ``SUMMARY: ... ACTION: ...`` plain text; None if the labels are absent."""
+    m = re.search(r"SUMMARY\s*:\s*(.+?)\s*(?:\n|^|\s)ACTION\s*:\s*(.+)", text, flags=re.S | re.I)
+    if not m:
+        return None
+    action = re.split(r"\n\s*\n|\n\s*(?:Example|SUMMARY)\b", m.group(2).strip(), flags=re.I)[0]
+    return {"summary": m.group(1).strip(), "recommended_action": action.strip(), "pattern_indicators": []}
+
+
 def parse_response(text: str) -> dict[str, str]:
-    """Extract the JSON object; join list fields into markdown bullets. Raises ValueError."""
-    obj = _load_json_lenient(text)
+    """Parse labelled plain text (preferred) or a JSON object. Raises ValueError.
+
+    ``pattern_indicators`` may be empty: code then supplies the indicator bullets.
+    """
+    obj = _labelled(text) or _load_json_lenient(text)
     out: dict[str, str] = {}
     for key in ("summary", "pattern_indicators", "recommended_action"):
         v = obj.get(key)
-        if v is None:
+        if v is None or (key == "pattern_indicators" and not v):
+            if key == "pattern_indicators":
+                out[key] = ""
+                continue
             raise ValueError(f"LLM output missing key {key!r}")
         if isinstance(v, list):
             v = "\n".join(f"- {str(x).strip()}" for x in v if str(x).strip())
@@ -76,6 +97,8 @@ def parse_response(text: str) -> dict[str, str]:
     for tok in ("[SENDER]", "[RECEIVER]"):
         if tok not in out["summary"]:
             raise ValueError(f"LLM summary does not reference {tok}")
+    if _norm(out["summary"]).startswith(_norm(EXAMPLE.split("ACTION:")[0].replace("SUMMARY:", ""))[:120]):
+        raise ValueError("LLM copied the example summary verbatim")
     return out
 
 
