@@ -149,6 +149,9 @@ services:
     environment:
       LLM_THREADS: ${LLM_THREADS:-3}
       LLM_CTX: ${LLM_CTX:-2048}
+      # default 0.5B (~10 s/SAR, 124 MB) for anything live; the recorded demo SARs use 1.5B (~41 s/SAR, 661 MB), both in ./models:
+      #   LLM_MODEL_FILE=qwen2.5-1.5b-instruct-q8_0-be.gguf docker compose up -d llm
+      LLM_MODEL_FILE: ${LLM_MODEL_FILE:-qwen2.5-0.5b-instruct-q8_0-be.gguf}
     restart: "no"
     init: true
 
@@ -160,10 +163,8 @@ services:
     # `--all` and `--list` also exist (fedaml.sar). Template fallback is automatic on LLM timeout (60 s) or hallucinated ids.
     # NOTE: no `${VAR:?}` guards anywhere: compose interpolates the whole file before applying profiles, so a guard breaks `docker compose up`.
     command: python3 -m fedaml.sar --alert-id ${ALERT_ID:-A01} --engine ${SAR_ENGINE:-llm}
-    depends_on:
-      llm:
-        condition: service_healthy
-        required: false        # INFRA fix 4 (15:40): llm exits 1 without weights; genai must still run with SAR_ENGINE=template
+    # No depends_on on llm (GENAI ask, 15:58): template runs must never start the LLM. Sequence for LLM SARs:
+    #   docker compose up -d llm && ALERT_ID=A01 docker compose run --rm genai && docker compose stop llm
     environment:
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
