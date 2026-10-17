@@ -72,7 +72,8 @@ Demo walkthrough: [`submission/DEMO_SCRIPT.md`](submission/DEMO_SCRIPT.md).
 
 ## 4. Results
 
-All numbers come from files written on the VM. Placeholders are replaced only from those files.
+All numbers come from files written on the VM. Placeholders are replaced only from those files. The full generated
+table with every row's file of origin is [`docs/RESULTS_TABLE.md`](docs/RESULTS_TABLE.md) (`python -m fedaml.results_table`).
 
 | Measurement | Value | File of origin (on the VM) |
 |---|---|---|
@@ -84,7 +85,7 @@ All numbers come from files written on the VM. Placeholders are replaced only fr
 | Transaction rows shared by all banks, all rounds | 0 | `logs/egress/bank_*.jsonl` |
 | Model parameters shared per update | 21 (about 750 bytes) | `logs/egress/bank_*.jsonl` |
 | Rogue bank (scaled poisoning), defense off → final pooled AUC / AP | 0.500 / 0.002 | `state/status_rogue_off.json`, `state/baselines.json` |
-| Rogue bank, defense on (DP off): rounds excluded / honest banks excluded / final AUC / AP | 10 of 10 / none / 0.989 / 0.183 | `state/status_rogue_on.json`, `state/baselines.json` |
+| Rogue bank, defense on (DP off): rounds excluded / honest banks excluded / final AUC / AP | 10 of 10 / none / 0.989 / 0.182 | `state/status_rogue_on.json`, `state/baselines.json` |
 | Membership auditing game, DP off: attack accuracy / attack AUC | 0.860 / 0.937 [0.91, 0.97] | `state/redteam.json` |
 | Membership auditing game, DP on σ 0.3: attack accuracy / attack AUC | 0.518 / 0.525 [0.51, 0.54] | `state/redteam.json` |
 | Formal ε (approximate, update-level, 10 rounds, σ 0.3) | ≈ 100 (loose; the measured attack above is the evidence) | `state/status_dpon.json`, `state/redteam.json` |
