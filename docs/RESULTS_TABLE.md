@@ -1,6 +1,6 @@
 # Results table (generated)
 
-Generated 2026-10-17 20:56 UTC on the LinuxONE VM by `python -m fedaml.results_table` from `state/`.
+Generated 2026-10-17 21:16 UTC on the LinuxONE VM by `python -m fedaml.results_table` from `state/`.
 Do not edit numbers by hand; rerun the command after new runs.
 
 All AUC/AP values are on the **pooled basis**: each bank's `test.csv` featurized within
@@ -29,16 +29,20 @@ pooling is not an upper bound here.
 | Bank 4 random forest | bank 4 only | 0.979 | 0.341 | `state/baselines.json` → `per_bank.4.rf` (`pooled_auc`, `pooled_ap`) |
 | Bank 4 hist. gradient boosting | bank 4 only | 0.882 | 0.405 | `state/baselines.json` → `per_bank.4.hgb` (`pooled_auc`, `pooled_ap`) |
 | **Centralized pooling, logistic regression** (not legal in practice; not an upper bound here) | all four banks' raw rows pooled | 0.983 | 0.088 | `state/baselines.json` → `centralized_logreg` |
-| **Federated logistic regression, DP off** | no row leaves any bank | 0.988 | 0.152 | `python -m fedaml.results_table` scores `state/global_final_dpoff.json` |
-| **Federated logistic regression, DP on (σ=0.3, ε≈99.7, δ=1e-05, approximate)** | no row leaves any bank; updates clipped + noised | 0.970 | 0.056 | `python -m fedaml.results_table` scores `state/global_final_dpon.json`; ε from `state/status_dpon.json` → `dp.epsilon_spent` |
-| **Federated, rogue bank 5 present, defense off** | bank 5 sends poisoned updates | 0.500 | 0.002 | `python -m fedaml.results_table` scores `state/global_final_rogue_off.json`; exclusions in `state/status_rogue_off.json` → `rounds[*].excluded` |
-| **Federated, rogue bank 5 present, defense on** | bank 5 detected and excluded | 0.989 | 0.182 | `python -m fedaml.results_table` scores `state/global_final_rogue_on.json`; exclusions in `state/status_rogue_on.json` → `rounds[*].excluded` |
+| **Federated logistic regression, DP off** | no row leaves any bank | 0.992 | 0.248 | `python -m fedaml.results_table` scores `state/global_final_dpoff.json` |
+| **Federated logistic regression, DP on (σ=0.5, ε≈46.2, δ=1e-05, approximate)** | no row leaves any bank; updates clipped + noised | 0.982 | 0.065 | `python -m fedaml.results_table` scores `state/global_final_dpon.json`; ε from `state/status_dpon.json` → `dp.epsilon_spent` |
+| **Federated, rogue bank 5 present, defense off** | bank 5 sends poisoned updates | 0.953 | 0.071 | `python -m fedaml.results_table` scores `state/global_final_rogue_off.json`; exclusions in `state/status_rogue_off.json` → `rounds[*].excluded` |
+| **Federated, rogue bank 5 present, defense on** | bank 5 detected and excluded | 0.992 | 0.250 | `python -m fedaml.results_table` scores `state/global_final_rogue_on.json`; exclusions in `state/status_rogue_on.json` → `rounds[*].excluded` |
 
-Reading (results line on the slide): federated without DP matches the best single bank on AUC
-and beats centralized pooling on AP; DP costs about 0.02 AUC and 0.10 AP, the measured price of
-the privacy guarantee the red-team table demonstrates; the rogue bank breaks the model to chance
-and the defense fully restores it. ε is approximate, update-level, and a weak formal guarantee at
-this size; the red-team table carries the privacy claim.
+Reading, computed from the numbers above ("ties" = within 0.002):
+
+- Federated, DP off (0.992 / 0.248): beats the best single bank on AUC (bank 4 logistic regression, 0.986), trails the best single bank on AP (bank 4 hist. gradient boosting, 0.405); beats centralized pooling on AUC (0.983) and beats it on AP (0.088).
+- Federated, DP on (0.982 / 0.065): trails the best single bank on AUC (bank 4 logistic regression, 0.986), trails the best single bank on AP (bank 4 hist. gradient boosting, 0.405); ties centralized pooling on AUC (0.983) and trails it on AP (0.088).
+- Price of DP: +0.010 AUC and +0.183 AP (DP off minus DP on).
+- Rogue bank: defense off 0.953 / 0.071, defense on 0.992 / 0.250.
+
+ε is approximate, update-level, and a weak formal guarantee at this size; the red-team table
+carries the privacy claim.
 
 Control (not in this table): every entry in `state/baselines.json` also carries `global_auc` /
 `global_ap` on `data/global_test.csv`, the red team's distribution-shift control. They read lower
