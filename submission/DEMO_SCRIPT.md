@@ -29,7 +29,7 @@ Terminals on screen: VM terminal (left, large font), browser with dashboard (rig
 | 4 | Rogue bank | 1:10–1:40 | P5 | Dashboard rogue panel from `status_rogue_off.json` / `status_rogue_on.json` (header: "defense evaluated with DP off") | "Bank 5 poisons its updates to hide its own laundering, a synthetic attack we wrote ourselves. Three layers stop it. Clipping and a cap on claimed sample counts mean one bank cannot reverse the model: even with the screen off, AUC only slips from 0.99 to 0.95. But precision collapses, 0.25 to 0.07, three of four alerts become false. Turn the screen on: the coordinator scores every update against the median, bank 5 is excluded in 10 of 10 rounds, no honest bank is touched, precision is back to 0.25. One honest note: this screen is evaluated without privacy noise, because bank-side noise also hides the poisoned direction." |
 | 5 | Red team | 1:40–2:20 | P6 | VM terminal: `docker compose run --rm attacker` (≈39 s on the VM; start it, talk over it; numbers from `state/redteam.json` after the post-run rerun; REDTEAM's 76-word script in `docs/REDTEAM.md`) | "Now we attack our own model. Membership inference: the coordinator, the one party that sees each bank's update, asks whether one real laundering transaction was in bank 3's update this round. **The rows the model remembers are the suspects**, so the game uses laundering rows: with DP off the attacker is right 94 percent of the time, attack AUC 0.99, which means bank 2 could learn which counterparties bank 1 considers suspicious. With DP on, noise added inside each bank before the update leaves, it drops to 51 percent, near chance (σ 0.5, attack AUC 0.517, 90 % interval 0.50 to 0.54; say "near chance", "coin flip" only for σ 0.8). Our first noise level, σ 0.3, still leaked a little at 0.55, so we raised it: we tuned privacy by attacking ourselves. Model cost: 0.992 to 0.982 AUC. The formal ε bound is loose at this setting and we say so; the measured attack is the evidence." Point at the privacy meter. (All-rows result is a footnote on the slide, from `state/redteam.json` `target=all`.) |
 | 6 | SAR | 2:20–2:40 | P6 | `cat state/sar/{{ALERT_ID}}.md` | "For a flagged chain across {{BANKS_INVOLVED}} banks, a small CPU LLM on the same box writes the suspicious activity report. The model decides, the LLM narrates; every number and id is inserted by code." ({{SAR_ENGINE}}: {{SAR_SECONDS}} s per report) |
-| 7 | Close | 2:40–2:55 | P1 | Slide: footprint + links | "IBM AML data, open-source attack tooling, IBM Z. Peak RAM {{PEAK_RSS_MB}} MB across all containers, {{SEC_PER_ROUND}} s per round, {{TOTAL_RUNTIME}} total. What the Dutch banks had to shut down, built so it would have been legal." |
+| 7 | Close | 2:40–2:55 | P1 | Slide: footprint + links | "IBM AML data, open-source attack tooling, IBM Z. Every container together peaks under 1.9 gigabytes, a federated round takes about two seconds, and the whole pipeline runs in just over two minutes. What the Dutch banks had to shut down, built so it would have been legal." |
 
 ## Placeholders → file of origin
 | Placeholder | Source file (on the VM) | Field |
@@ -43,11 +43,10 @@ Terminals on screen: VM terminal (left, large font), browser with dashboard (rig
 | ε (formal, loose) ≈ 46 | `state/status_dpon.json`, `state/redteam.json` `rows["σ 0.5"].eps_accountant_total` | say "loose, stated as such; measured attack near chance" |
 | ALERT_ID, BANKS_INVOLVED | `state/alerts.json` | first alert with ≥2 banks |
 | SAR_ENGINE, SAR_SECONDS | `state/sar/<id>.md` footer; `docs/GENAI.md` | engine line; measured seconds |
-| PEAK_RSS_MB, SEC_PER_ROUND, TOTAL_RUNTIME | `state/footprint.json` | sum of `per_container_peak_rss_mb`; `seconds_per_round`; `total_runtime_s` |
+| 1,880 MB, 2.12 s, 127 s | `state/footprint.json` (21:13 UTC) | `total_peak_rss_mb_sum`; `seconds_per_round`; `total_runtime_s` |
 
 ## Timing rule
-A live 10-round, 5-bank run must finish in **< 15 min** (FEDERATION tunes epochs/row caps). Scene 3 does NOT wait for it:
-start the run, talk over rounds 1–3, then cut to a pre-recorded or already-finished dashboard for the final AUC.
+A live 10-round, 4-bank DP-on run takes **≈ 40 s** (2.12 s per round, measured), so scene 3 can show the whole run live: start it, and the AUC curve fills while you talk.
 Scenes 5 and 6 use models and files produced earlier on the VM; say "produced on this machine earlier today".
 
 ## Fallbacks (decide before recording, write the choice here)
