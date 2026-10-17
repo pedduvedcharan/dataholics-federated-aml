@@ -2,7 +2,7 @@
 # One image ("fedaml", built from ./Dockerfile by INFRA), one service per role.
 # Default profile:  docker compose up            -> coordinator, bank1..bank4, rogue, dashboard
 # Tools profile:    docker compose run --rm attacker | genai | alerts | baselines | tryleak   (llm starts with genai)
-# Toggles (env, all optional):  ROUNDS DP SIGMA CLIP DEFENSE EPOCHS ROGUE_ATTACK ROGUE_FACTOR SEED
+# Toggles (env, all optional):  ROUNDS BANKS EVAL_BANKS DP SIGMA CLIP DEFENSE TAU TAG EPOCHS TRAINER ROGUE_ATTACK ROGUE_FACTOR SEED
 #   e.g.  DP=off DEFENSE=off docker compose up           (the "unprotected" run)
 #         DP=on  DEFENSE=on  docker compose up           (the demo run; defaults)
 # Volumes: ./data (read-only shards), ./state (models + status JSON), ./logs (egress audit).
@@ -34,25 +34,29 @@ x-bank: &bank
     coordinator:
       condition: service_healthy
   # Banks: data stays in the container; only clipped+noised deltas leave through fedaml.egress.send.
-  # TODO(FEDERATION): confirm bank.py reads DP/clip settings from GET /config (not CLI) so one toggle rules all.
+  # FEDERATION 15:30 (bank.py): DP/clip come from GET /config; retries the coordinator for --connect-timeout 120 s; --trainer prox|lbfgs|sgd (env TRAINER), --mu (env MU).
 
 services:
 
   coordinator:
     <<: *common
     container_name: coordinator
+    # FEDERATION flags verified 15:30 (fedaml/coordinator.py): --host defaults 0.0.0.0, --seed, --tag, --eval-banks, --tau, --round-timeout, --linger.
+    # TAG names the run: dpoff | dpon | rogue_off | rogue_on  -> state/global_final_<tag>.json + state/status_<tag>.json (MASTER decision 15:30)
     command: >
       python3 -m fedaml.coordinator
       --rounds ${ROUNDS:-10}
       --banks ${BANKS:-1,2,3,4,5}
+      --eval-banks ${EVAL_BANKS:-1,2,3,4}
       --dp ${DP:-on}
       --sigma ${SIGMA:-0.8}
       --clip ${CLIP:-1.0}
       --defense ${DEFENSE:-on}
+      --tau ${TAU:-0.8}
+      --round-timeout ${ROUND_TIMEOUT:-120}
+      --tag "${TAG:-}"
       --seed ${SEED:-42}
-    # TODO(FEDERATION): coordinator must bind 0.0.0.0:8000 inside the container (add --host, default 0.0.0.0).
-    # TODO(FEDERATION): --banks for a no-rogue run is 1,2,3,4 (then also scale the rogue service to 0:
-    #                   `docker compose up --scale rogue=0`). Confirm --seed is accepted or drop it here.
+    # No-rogue run: BANKS=1,2,3,4 docker compose up --scale rogue=0
     ports:
       - "127.0.0.1:8000:8000"       # host-only, for curl debugging through an SSH tunnel
     healthcheck:
@@ -91,13 +95,13 @@ services:
       python3 -m fedaml.rogue --bank-id 5 --coordinator http://coordinator:8000
       --attack ${ROGUE_ATTACK:-scale} --factor ${ROGUE_FACTOR:--20}
       --epochs ${EPOCHS:-1} --seed ${SEED:-42}
-    # TODO(FEDERATION): confirm rogue.py accepts --epochs/--seed, or remove them here.
+    # FEDERATION 15:30: rogue.py reuses bank.add_common_args (so --epochs/--seed/--trainer work) + --attack scale|flip|none --factor --claim-factor.
 
   dashboard:
     <<: *common
     container_name: dashboard
     command: python3 -m fedaml.dashboard --port 8050
-    # TODO(AUDIT): dashboard must bind 0.0.0.0 inside the container; host side is 127.0.0.1 below.
+    # AUDIT 13:00: dashboard binds 0.0.0.0 automatically when /.dockerenv exists; host side is 127.0.0.1 below.
     #              Reach from the Mac: ssh -L 8050:localhost:8050 dataholics  ->  http://localhost:8050
     ports:
       - "127.0.0.1:8050:8050"
@@ -170,7 +174,7 @@ services:
     profiles: ["tools"]
     # Top-20 flagged chains from the final global model -> state/alerts.json (MODELS, consumed by genai)
     command: python3 -m fedaml.alerts --model ${ALERTS_MODEL:-state/global_final.json} --top 20 --seed ${SEED:-42}
-    # TODO(MODELS): confirm `python3 -m fedaml.alerts` is the entrypoint (commit c9bea59 mentions a --alerts flag).
+    # GENAI owns fedaml/alerts.py (flags verified 15:30: --test --model --out --top --max-rows --seed); MODELS' duplicate --alerts path was removed 13:15.
 
   tryleak:
     <<: *common
