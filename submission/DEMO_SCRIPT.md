@@ -10,9 +10,10 @@ stitched. Narrators: P1 (scenes 1, 2, 7), P5 (scene 3, 4), P6 (scenes 5, 6).
 ssh -L 8050:localhost:8050 -L 8000:localhost:8000 dataholics
 # VM: fresh state (nothing else running: no host-side llama-server, no stray python; `uptime` load < 0.5)
 cd ~/fedaml && git pull && scripts/reset_run.sh --down # INFRA: wipes state/ logs/ keeps data/; --down recreates compose containers
-docker compose build                                   # ALWAYS: the image COPYs fedaml/ at build time, so every git pull needs a build
+scripts/image_fresh.sh --rebuild                       # ALWAYS (not a bare `docker compose build`): rebuilds only if fedaml/ changed and labels the image with the commit
 docker compose run --rm tryleak                        # warm the tryleak layer once (first run ~2 s), reset_run.sh wipes the log after
-docker compose up -d dashboard                         # dashboard first, so it is already open
+docker compose up -d dashboard                         # dashboard first, so it is already open (recreated from the fresh image)
+scripts/preflight_check.sh                             # must print GO
 # Mac browser: http://localhost:8050  (expect "waiting" panels)
 # Confirm these exist from earlier VM runs (they are shown in scenes 5 and 6, not produced live):
 ls state/global_final_dpoff.json state/global_final_dpon.json state/redteam.json state/alerts.json state/sar/
