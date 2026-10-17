@@ -414,7 +414,9 @@ function renderRedteam(s) {
 function renderAudit(s, rt) {
   const entries = Object.entries(rt.rows).filter(([, r]) => r && typeof r === 'object');
   const ci = r => Array.isArray(r.attack_auc_ci90) && r.attack_auc_ci90.length === 2 ? `${f3(r.attack_auc_ci90[0])}–${f3(r.attack_auc_ci90[1])}` : '—';
-  const runSigma = s.status && s.status.dp && s.status.dp.enabled ? Number(s.status.dp.sigma) : null;
+  const runSigma = typeof rt.current_sigma === 'number' ? rt.current_sigma : (s.status && s.status.dp && s.status.dp.enabled ? Number(s.status.dp.sigma) : null);
+  const isCurrent = (k, r) => rt.current_setting ? k === rt.current_setting : (runSigma != null && Number(r.sigma) === runSigma);
+  const ciHas = (r, x) => Array.isArray(r.attack_auc_ci90) && r.attack_auc_ci90[0] <= x && r.attack_auc_ci90[1] >= x;
   const vtag = v => { const u = String(v || '').toUpperCase(); return u === 'PROTECTED' ? '<span class="tag ok">✔ PROTECTED</span>' : u === 'LEAKS' ? '<span class="tag bad">✖ LEAKS</span>' : u ? `<span class="tag warn">▲ ${esc(u)}</span>` : '—'; };
   const off = entries.find(([, r]) => !Number(r.sigma));
   const ons = entries.filter(([, r]) => Number(r.sigma) > 0);
@@ -422,21 +424,26 @@ function renderAudit(s, rt) {
   if (off && ons.length) {
     const allProt = ons.every(([, r]) => String(r.verdict).toUpperCase() === 'PROTECTED');
     const o = off[1];
-    if (allProt && String(o.verdict).toUpperCase() === 'LEAKS') { vcls = 'good'; vtxt = `✔ Without noise the attacker spots the planted laundering row (AUC ${f3(o.attack_auc)}); with DP at every σ tested it is back to a coin flip (AUC ${ons.map(([, r]) => f3(r.attack_auc)).join(' / ')}${ons.every(([, r]) => Array.isArray(r.attack_auc_ci90) && r.attack_auc_ci90[0] <= 0.5 && r.attack_auc_ci90[1] >= 0.5) ? ', every 90% CI includes 0.5' : ''}).`; }
+    if (allProt && String(o.verdict).toUpperCase() === 'LEAKS') {
+      const above = ons.filter(([, r]) => !ciHas(r, 0.5));
+      vcls = 'good';
+      vtxt = `✔ Without noise the attacker spots the planted laundering transaction (AUC ${f3(o.attack_auc)}). With DP it falls to near chance: ${ons.map(([k, r]) => `${k} → ${f3(r.attack_auc)}`).join(', ')}.`
+        + (above.length ? ` ${above.map(([k, r]) => `${k} stays slightly above chance (90% CI ${f3(r.attack_auc_ci90[0])}–${f3(r.attack_auc_ci90[1])})`).join('; ')}.` : ' Every 90% CI includes 0.5.');
+    }
     else if (allProt) { vcls = 'good'; vtxt = '✔ PROTECTED at every σ tested'; }
     else { vcls = 'bad'; vtxt = '✖ the attack still beats chance at some σ: ' + ons.filter(([, r]) => String(r.verdict).toUpperCase() !== 'PROTECTED').map(([k]) => k).join(', '); }
   }
   // footnote: the older row-level membership attacks, if REDTEAM keeps them in the file
   const rl = rt.row_level || rt.footnote || (rt.dp_off && rt.dp_on ? { dp_off: rt.dp_off, dp_on: rt.dp_on, target: rt.target } : null);
   const foot = rl && rl.dp_off && rl.dp_on
-    ? `Row-level membership attack on the final model (${esc(rl.target || 'laundering')} rows): DP off acc ${f3(rl.dp_off.attack_acc)} / AUC ${f3(rl.dp_off.attack_auc)} · DP on acc ${f3(rl.dp_on.attack_acc)} / AUC ${f3(rl.dp_on.attack_auc)}.`
+    ? `Footnote: row-level membership attack${rl.attack ? ' (' + esc(rl.attack) + ')' : ''} on the final model (${esc(rl.target || 'laundering')} rows): DP off acc ${f3(rl.dp_off.attack_acc)} / AUC ${f3(rl.dp_off.attack_auc)} · DP on acc ${f3(rl.dp_on.attack_acc)} / AUC ${f3(rl.dp_on.attack_auc)}.`
     : '';
   $('red-body').className = '';
-  $('red-body').innerHTML = `<div style="font-size:11px; color:var(--ink-2); margin-bottom:4px">attack: <b>${esc(rt.attack || 'canary_update')}</b>${rt.bank != null ? ' · bank ' + esc(rt.bank) : ''}${rt.target_row ? ' · canary: ' + esc(rt.target_row) : ''}</div>
+  $('red-body').innerHTML = `<div style="font-size:11px; color:var(--ink-2); margin-bottom:4px">attack: <b>${esc(rt.attack || 'canary_update')}</b>${rt.bank != null ? ' · bank ' + esc(rt.bank) : ''}${rt.target_row ? ' · canary: ' + esc(rt.target_row) : ''}${rt.target && typeof rt.target === 'string' && rt.target.length > 20 ? ' · target: ' + esc(rt.target) : ''}${rt.dp_on_mode ? ' · DP mode: ' + esc(rt.dp_on_mode) : ''}</div>
     <table><tr><th>setting</th><th class="num">σ</th><th class="num">attack AUC</th><th class="num">90% CI</th><th class="num">ε lower bound (measured)</th><th class="num">ε accountant (1 round)</th><th style="padding-left:14px">verdict</th></tr>` +
-    entries.map(([k, r]) => `<tr${runSigma != null && Number(r.sigma) === runSigma ? ' style="outline:1px solid var(--s1)"' : ''}><td>${esc(k)}</td><td class="num">${esc(r.sigma ?? '—')}</td><td class="num">${f3(r.attack_auc)}</td><td class="num">${ci(r)}</td><td class="num">${r.eps_empirical_lower_95 == null ? '—' : f2(r.eps_empirical_lower_95)}</td><td class="num">${r.eps_accountant_1round == null ? '—' : f2(r.eps_accountant_1round)}</td><td style="padding-left:14px">${vtag(r.verdict)}</td></tr>`).join('') +
+    entries.map(([k, r]) => `<tr${isCurrent(k, r) ? ' style="outline:1px solid var(--s1)"' : ''}><td>${esc(k)}</td><td class="num">${esc(r.sigma ?? '—')}</td><td class="num">${f3(r.attack_auc)}</td><td class="num">${ci(r)}</td><td class="num">${r.eps_empirical_lower_95 == null ? '—' : f2(r.eps_empirical_lower_95)}</td><td class="num">${r.eps_accountant_1round == null ? '—' : f2(r.eps_accountant_1round)}</td><td style="padding-left:14px">${vtag(r.verdict)}</td></tr>`).join('') +
     `</table>
-    <div style="color:var(--muted); font-size:11px; margin-top:4px">Synthetic attack by our own team: the attacker sees one bank's update with and without a planted laundering row and guesses which. 0.5 = chance.${runSigma != null ? ' Outlined row = σ of the current run.' : ''} ${esc(foot)}</div>
+    <div style="color:var(--muted); font-size:11px; margin-top:4px">Synthetic attack by our own team: the attacker sees one bank's update with and without a planted laundering row and guesses which. 0.5 = chance.${(rt.current_setting || runSigma != null) ? ' Outlined row = setting of the current run' + (rt.current_setting ? ' (' + esc(rt.current_setting) + ')' : '') + '.' : ''}${typeof rt.model_auc_off === 'number' && typeof rt.model_auc_on === 'number' ? ` Utility cost: model AUC ${f3(rt.model_auc_off)} without DP → ${f3(rt.model_auc_on)} with DP.` : ''} ${esc(foot)}</div>
     <div class="verdict ${vcls}">${esc(vtxt)}</div>`;
 }
 
