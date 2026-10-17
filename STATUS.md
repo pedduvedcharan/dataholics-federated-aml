@@ -9,7 +9,7 @@
 |---|---|---|---|
 | MASTER | active | 12:55 | hourly loop; collect exact container commands from FEDERATION/AUDIT/GENAI; `docker compose up` on VM by 17:30 |
 | INFRA | in progress | 12:42 (commit 9f172a8: setup_vm.sh, Dockerfile) | run `setup_vm.sh` on VM; `docker build -t fedaml .` (record time); land CSV; `partition_data.py` |
-| MODELS | in progress | 12:50 (features.py 302 lines in tree) | determinism/NaN checks; `docs/FEATURES.md`; push |
+| MODELS | features.py, baselines.py, docs/FEATURES.md pushed (c452cfa); tested on synthetic 4-bank partition; blocked on data + VM venv | 12:58 | run `python -m fedaml.baselines --banks 1,2,3,4` on VM, paste table; then alerts.json with GENAI |
 | FEDERATION | not started | | coordinator + bank MVP against stubs |
 | REDTEAM | not started | | loss-threshold attack scaffold |
 | AUDIT | not started | | `egress.py` + `tests/test_egress.py` (FEDERATION blocks on it) |
