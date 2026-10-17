@@ -13,6 +13,15 @@ Given the deltas received in one round:
       - exclude a bank whose cosine distance to the median exceeds ``tau``;
       - exclude a bank whose norm exceeds ``norm_ratio`` x the median norm.
 
+Why tau = 1.5 (cosine distance; 0 = same direction, 1 = orthogonal, 2 = opposite).
+Measured on the real IBM AML shards, 10 rounds, prox trainer, clip 1.0:
+honest banks 2-4 score 0.02-0.32; honest bank 1, whose data is not learnable
+with per-row features, scores 0.94-1.33, i.e. roughly orthogonal to the
+consensus; the scaled rogue (x -20) scores 1.84. Poisoning that hides
+laundering has to push the model AGAINST the consensus, so the test excludes
+updates that oppose it (similarity below -0.5), not updates that merely
+disagree. tau 0.5 or 0.8 excluded honest bank 1 every round.
+
 Every exclusion is recorded as ``{"bank_id", "reason", "score"}`` and the
 scores of all banks are returned for the regulator dashboard.
 """

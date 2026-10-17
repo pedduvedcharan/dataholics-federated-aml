@@ -128,7 +128,9 @@ class Coordinator:
         self.tests: dict = {}
         self.evaluate = None
         self._load_evaluator()
-        for p in glob.glob(os.path.join(args.state_dir, "global_round_*.json")):
+        args.save_updates = args.save_updates == "on"
+        for p in glob.glob(os.path.join(args.state_dir, "global_round_*.json")) + \
+                glob.glob(os.path.join(args.state_dir, "updates", args.tag or "run", "*.json")):
             os.remove(p)
         self.write_status()
 
@@ -186,6 +188,7 @@ class Coordinator:
         return {"round": len(self.history), "total_rounds": self.rounds,
                 "dp": {"enabled": self.dp_on, "sigma": a.sigma if self.dp_on else 0.0, "clip_norm": a.clip,
                        "epsilon_spent": eps, "delta": a.delta, "mode": a.dp_mode,
+                       "epsilon_planned_total": dp.epsilon_spent(a.sigma, self.rounds, a.delta) if self.dp_on else 0.0,
                        "noise_added_by": ("bank" if a.dp_mode == "local" else "coordinator") if self.dp_on else "nobody",
                        "epsilon_note": "approximate; update-level (per bank per round) Gaussian mechanism composed over rounds, see fedaml/dp.py"},
                 "defense": {"enabled": self.defense_on, "tau": a.tau, "norm_ratio": a.norm_ratio, "weight_cap_factor": a.weight_cap},
@@ -214,6 +217,9 @@ class Coordinator:
             if msg["bank_id"] in self.updates:
                 log.info("bank %s re-posted round %d; replacing", msg["bank_id"], self.round)
             self.updates[msg["bank_id"]] = msg
+            if self.args.save_updates:
+                tag = self.args.tag or "run"
+                atomic_write_json(msg, os.path.join(self.args.state_dir, "updates", tag, f"round_{self.round}_bank_{msg['bank_id']}.json"))
             if self.first_update_at is None:
                 self.first_update_at = time.time()
             log.info("round %d: update from bank %s (n_samples=%d, |delta|=%.4f) %d/%d received", self.round,
@@ -353,7 +359,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--dp-mode", choices=["central", "local"], default=os.environ.get("DP_MODE", "central"),
                    help="central: coordinator noises the aggregate (default); local: each bank noises its delta")
     p.add_argument("--defense", choices=["on", "off"], default="on")
-    p.add_argument("--tau", type=float, default=0.8, help="max cosine distance to the median delta (rogue ~1-2, honest <0.7 with the prox trainer)")
+    p.add_argument("--tau", type=float, default=float(os.environ.get("TAU", "1.5")),
+                   help="max cosine distance to the median delta; 1.0 = orthogonal, 2.0 = opposite. Real shards: honest "
+                        "banks 0.02-1.33 (bank 1 is orthogonal, not opposed), scaled rogue 1.84")
     p.add_argument("--norm-ratio", type=float, default=3.0, help="max norm as a multiple of the median norm")
     p.add_argument("--weight-cap", type=float, default=2.0, help="cap on claimed n_samples as a multiple of the median claim")
     p.add_argument("--round-timeout", type=float, default=120.0, help="seconds after the first update before closing a round")
@@ -364,6 +372,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--eval-banks", default=os.environ.get("EVAL_BANKS", "2,3,4"),
                    help="banks whose test.csv form the pooled evaluation set (bank 1 is unlearnable with per-row features)")
     p.add_argument("--tag", default="", help="also write state/global_final_<tag>.json and state/status_<tag>.json")
+    p.add_argument("--save-updates", choices=["on", "off"], default="on",
+                   help="persist each received update as state/updates/<tag>/round_<r>_bank_<b>.json (for REDTEAM)")
     p.add_argument("--linger", type=float, default=60.0, help="seconds to keep serving after the last round")
     p.add_argument("--seed", type=int, default=42)
     return p.parse_args(argv)
