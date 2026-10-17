@@ -7,6 +7,7 @@ afterwards. That is how "LLM narrates, model decides" is enforced rather than ho
 """
 from __future__ import annotations
 
+import math
 import re
 
 # feature name -> (plain-English one-liner, what a positive contribution means)
@@ -116,15 +117,38 @@ def fill_placeholders(text: str, facts: dict[str, str]) -> str:
     return re.sub(r"\[([A-Z_]+)\]", sub, text)
 
 
+# Count features are log1p(count) inside the scored frame; decode them so text states the number, not "many".
+_COUNT_TEXT = {
+    "snd_txn_cnt_log": "the sender made {n} payment{s} in the review sample",
+    "snd_uniq_rcv_log": "the sender paid {n} distinct account{s} in the review sample",
+    "rcv_in_deg_log": "the receiver collected {n} payment{s} in the review sample",
+}
+
+
+def feature_fact(f: dict) -> str:
+    """A factual phrase for one feature contribution, derived from its value (no 'many', no 'rarely')."""
+    name, v = f["name"], float(f.get("value", 0.0))
+    if name in _COUNT_TEXT:
+        n = int(round(math.expm1(v)))
+        return _COUNT_TEXT[name].format(n=n, s="" if n == 1 else "s")
+    if name.startswith("fmt_"):
+        return f"the payment format is {glossary(name)[0].replace('payment format is ', '')}"
+    if name == "log_amt":
+        return "the payment amount is large for this model (capped for ranking)" if v > 0 else "the amount is small"
+    if name == "snd_amt_mean_log":
+        return "the sender's average payment size is high for this model"
+    if name in ("round_amt", "cur_mismatch", "same_bank", "is_usd"):
+        desc = glossary(name)[0]
+        return desc if v else f"not the case that {desc}"
+    return glossary(name)[0]
+
+
 def indicator_lines(alert: dict) -> list[str]:
-    """One qualitative line per top feature, suitable for the LLM (no raw values)."""
+    """One factual line per top feature for the LLM: what the value says and which way it pushes the score."""
     out = []
     for f in alert.get("top_features", []):
-        desc, meaning = glossary(f["name"])
-        if float(f.get("contribution", 0)) > 0:
-            out.append(f"{desc}: {meaning}; this raises the laundering score")
-        else:
-            out.append(f"{desc}: this transaction is unremarkable on this feature; it slightly lowers the score")
+        direction = "raises" if float(f.get("contribution", 0)) > 0 else "lowers"
+        out.append(f"{feature_fact(f)}; this {direction} the score")
     return out
 
 
@@ -139,13 +163,10 @@ def template_sections(alert: dict, facts: dict[str, str]) -> dict[str, str]:
     )
     bullets = []
     for f in alert.get("top_features", []):
-        desc, meaning = glossary(f["name"])
+        desc, _ = glossary(f["name"])
         c = float(f.get("contribution", 0))
-        if c >= 0:
-            bullets.append(f"- **{f['name']}** ({desc}): {meaning}; raises the score, contribution +{c:.3f}.")
-        else:
-            bullets.append(f"- **{f['name']}** ({desc}): points the other way for this transaction; "
-                           f"lowers the score, contribution {c:.3f}.")
+        verb = "raises" if c >= 0 else "lowers"
+        bullets.append(f"- **{f['name']}** ({desc}): {feature_fact(f)}; {verb} the score, contribution {c:+.3f}.")
     indicators = "\n".join(bullets) if bullets else "- No single dominant indicator; the score is spread across features."
     action = (
         "Place a review hold on account [SENDER] at bank [SENDER_BANK] and request the account-opening "

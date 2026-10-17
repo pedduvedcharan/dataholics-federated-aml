@@ -71,9 +71,12 @@ VERDICT = re.compile(r"\b(likelihood|likely|probabl\w*|evidence|proves?|confirm\
                      r"\b(is|was|constitutes|consistent with|indicat\w*|suggest\w*)\b[^.]*\bmoney laundering\b", re.I)
 
 
-# Frequency claims are dropped: the code-written summary states the actual counts (MASTER, Oct 17 16:30).
+# Frequency, prevalence and size-of-count claims are dropped: the code-written sections state the actual counts
+# (MASTER, Oct 17 16:30/16:33).
 FREQUENCY = re.compile(r"\b(rarely|seldom|frequent\w*|infrequent\w*|often|never|usually|regularly|"
-                       r"occasional\w*|many (other )?(transactions|payments)|few (other )?(transactions|payments))\b", re.I)
+                       r"occasional\w*|many (other )?(transactions|payments)|few (other )?(transactions|payments)|"
+                       r"(less|more|most|least) common|uncommon|commonly used|is large|are large|many (different|distinct))\b",
+                       re.I)
 
 
 def parse_response(text: str) -> dict[str, str]:
