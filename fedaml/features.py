@@ -72,7 +72,7 @@ DATA_DIR = Path(os.environ.get("FEDAML_DATA_DIR", "data"))
 
 # dtypes used whenever a bank CSV is read, so account ids never become ints.
 CSV_DTYPES = {
-    "from_bank": "int64", "to_bank": "int64",
+    "from_bank": "string", "to_bank": "string",  # bank codes keep leading zeros ("011")
     "from_acct": "string", "to_acct": "string",
     "amt_recv": "float64", "amt_paid": "float64",
     "cur_recv": "string", "cur_paid": "string", "fmt": "string",
@@ -116,13 +116,13 @@ def featurize(df: pd.DataFrame) -> np.ndarray:
     amt = np.clip(amt, 0.0, None)
     cur_paid = df["cur_paid"].astype("string").fillna("")
     cur_recv = df["cur_recv"].astype("string").fillna("")
-    from_bank = pd.to_numeric(df["from_bank"], errors="coerce").fillna(-1).to_numpy()
-    to_bank = pd.to_numeric(df["to_bank"], errors="coerce").fillna(-2).to_numpy()
+    from_bank = df["from_bank"].astype("string").fillna("").str.strip()
+    to_bank = df["to_bank"].astype("string").fillna("").str.strip()
 
     out[:, col["log_amt"]] = np.log1p(amt)
     out[:, col["is_usd"]] = (cur_paid == "US Dollar").to_numpy(dtype=np.float32)
     out[:, col["cur_mismatch"]] = (cur_paid != cur_recv).to_numpy(dtype=np.float32)
-    out[:, col["same_bank"]] = (from_bank == to_bank).astype(np.float32)
+    out[:, col["same_bank"]] = (from_bank == to_bank).to_numpy(dtype=np.float32)
     out[:, col["round_amt"]] = (np.abs(np.mod(amt, 100.0)) < 1e-6).astype(np.float32)
 
     ts = _parse_ts(df["ts"])
@@ -138,14 +138,8 @@ def featurize(df: pd.DataFrame) -> np.ndarray:
         out[:, col[_fmt_feature_name(f)]] = (fmt == f).to_numpy(dtype=np.float32)
 
     # Account-level aggregates, strictly within this dataframe.
-    snd_key = pd.Series(
-        from_bank.astype(np.int64).astype(str) + "|" + df["from_acct"].astype("string").fillna("").to_numpy(),
-        index=df.index,
-    )
-    rcv_key = pd.Series(
-        to_bank.astype(np.int64).astype(str) + "|" + df["to_acct"].astype("string").fillna("").to_numpy(),
-        index=df.index,
-    )
+    snd_key = (from_bank + "|" + df["from_acct"].astype("string").fillna("")).astype(object)
+    rcv_key = (to_bank + "|" + df["to_acct"].astype("string").fillna("")).astype(object)
     snd_cnt = snd_key.map(snd_key.value_counts()).to_numpy(dtype=np.float64)
     snd_uniq = snd_key.map(
         pd.DataFrame({"s": snd_key, "r": rcv_key}).groupby("s")["r"].nunique()
@@ -270,13 +264,18 @@ def selftest(df: pd.DataFrame) -> dict:
 # --------------------------------------------------------------------------- #
 # Internals
 # --------------------------------------------------------------------------- #
+TS_FORMATS = ("%Y-%m-%d %H:%M:%S",   # INFRA partition_data.py output
+              "%Y/%m/%d %H:%M")      # raw Kaggle CSV
+
+
 def _parse_ts(s: pd.Series) -> pd.Series:
-    """Parse timestamps; Kaggle uses 'YYYY/MM/DD HH:MM'. Falls back to generic."""
-    try:
-        ts = pd.to_datetime(s, format="%Y/%m/%d %H:%M", errors="raise")
-    except (ValueError, TypeError):
-        ts = pd.to_datetime(s, errors="coerce", format="mixed")
-    return ts
+    """Parse timestamps with the known fixed formats first, generic parser last."""
+    for fmt in TS_FORMATS:
+        try:
+            return pd.to_datetime(s, format=fmt, errors="raise")
+        except (ValueError, TypeError):
+            continue
+    return pd.to_datetime(s, errors="coerce", format="mixed")
 
 
 def _main() -> None:
