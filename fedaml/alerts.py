@@ -8,10 +8,14 @@ Scoring uses the exact logistic formula of the federated global model
 model that the banks trained, not to a second opinion. ``global_test.csv`` is the
 regulator-side held-out set (CONTRACTS §2), so chains may span several banks.
 
+Filter: same-account transfers and chains touching < 2 banks are skipped while ranking
+(MASTER decision Oct 17 16:16); ``meta`` reports precision before and after.
+
 Output schema (CONTRACTS §6, agents/06-GENAI.md):
+    {"meta": {...precision, filter, demo_alert_id...}, "alerts":
     [{"alert_id", "score", "rank", "model_sha256", "trigger": {row}, "rows": [<=10 rows],
       "banks_involved": [codes], "institutions": [{"code","label","role","rows"}], "accounts": [...], "top_features": [{"name","value","weight","contribution"}],
-      "chain_summary": {"n_rows","total_amt_paid","sender_other_txns","receiver_onward_txns"}}]
+      "chain_summary": {"n_rows","total_amt_paid","sender_other_txns","receiver_onward_txns","laundering_rows"}}]}
 """
 from __future__ import annotations
 
@@ -142,40 +146,87 @@ def institutions(rows: list[dict], banks: list[str], labels: dict[str, str]) -> 
     return out
 
 
+def _alert(rank: int, pos: int, idx, p: np.ndarray, X: np.ndarray, coef: np.ndarray, names: list[str],
+           model: dict, rows: list[dict], n_s: int, n_r: int, banks: list[str], labels: dict[str, str]) -> dict:
+    accounts = sorted({str(r["from_acct"]) for r in rows} | {str(r["to_acct"]) for r in rows})
+    return {
+        "alert_id": f"A{rank:02d}",
+        "rank": rank,
+        "score": round(float(p[pos]), 6),
+        "model_sha256": model.get("sha256"),
+        "model_round": model.get("round"),
+        "trigger": rows[0],
+        "rows": rows,
+        "banks_involved": banks,
+        "institutions": institutions(rows, banks, labels),
+        "accounts": accounts,
+        "top_features": top_features(X[pos], coef, names),
+        "chain_summary": {
+            "n_rows": len(rows),
+            "total_amt_paid": round(float(sum(r.get("amt_paid") or 0.0 for r in rows)), 2),
+            "sender_other_txns": int(n_s),
+            "receiver_onward_txns": int(n_r),
+            "n_banks": len(banks),
+            "laundering_rows": int(sum(int(r.get("is_laundering") or 0) for r in rows)),
+        },
+    }
+
+
 def build_alerts(df: pd.DataFrame, model: dict, top: int = 20, max_rows: int = 10,
-                 bank_labels: dict[str, str] | None = None) -> list[dict]:
-    """Score every row, take the top ``top`` by probability, attach chain + attribution."""
+                 bank_labels: dict[str, str] | None = None, exclude_self: bool = True,
+                 min_banks: int = 2, extra_k: tuple[int, ...] = (50, 100)) -> tuple[list[dict], dict]:
+    """Rank rows by score and keep the top ``top`` that pass the product filter.
+
+    Filter (agreed with MASTER, Oct 17 16:16): skip same-account transfers (``from_acct == to_acct``,
+    a currency conversion inside one account, not a chain) and chains touching fewer than ``min_banks``
+    banks. Returns ``(alerts, meta)``; meta reports precision of the trigger labels before and after.
+    """
+    labels = bank_labels or {}
     p, X = score(df, model)
     coef = np.asarray(model["coef"], dtype=np.float64)
     names = list(model.get("feature_names"))
-    order = np.argsort(-p)[:top]
-    alerts = []
-    for rank, pos in enumerate(order, start=1):
-        idx = df.index[pos]
-        rows, n_s, n_r = gather_chain(df, idx, max_rows)
+    y = df["is_laundering"].fillna(0).astype(int).to_numpy()
+    self_mask = (df["from_acct"].astype(str) == df["to_acct"].astype(str)).to_numpy()
+    order = np.argsort(-p, kind="stable")
+
+    raw = order[:top]
+    k_max = max((top,) + tuple(extra_k))
+    kept: list[tuple[int, list[dict], int, int, list[str]]] = []
+    skipped_self = skipped_banks = 0
+    for pos in order:
+        if len(kept) >= k_max:
+            break
+        if exclude_self and self_mask[pos]:
+            skipped_self += 1
+            continue
+        rows, n_s, n_r = gather_chain(df, df.index[pos], max_rows)
         banks = sorted({str(r["from_bank"]) for r in rows} | {str(r["to_bank"]) for r in rows}, key=_bank_key)
-        accounts = sorted({str(r["from_acct"]) for r in rows} | {str(r["to_acct"]) for r in rows})
-        alerts.append({
-            "alert_id": f"A{rank:02d}",
-            "rank": rank,
-            "score": round(float(p[pos]), 6),
-            "model_sha256": model.get("sha256"),
-            "model_round": model.get("round"),
-            "trigger": rows[0],
-            "rows": rows,
-            "banks_involved": banks,
-            "institutions": institutions(rows, banks, bank_labels or {}),
-            "accounts": accounts,
-            "top_features": top_features(X[pos], coef, names),
-            "chain_summary": {
-                "n_rows": len(rows),
-                "total_amt_paid": round(float(sum(r.get("amt_paid") or 0.0 for r in rows)), 2),
-                "sender_other_txns": int(n_s),
-                "receiver_onward_txns": int(n_r),
-                "n_banks": len(banks),
-            },
-        })
-    return alerts
+        if len(banks) < min_banks:
+            skipped_banks += 1
+            continue
+        kept.append((int(pos), rows, n_s, n_r, banks))
+
+    alerts = [_alert(rank, pos, df.index[pos], p, X, coef, names, model, rows, n_s, n_r, banks, labels)
+              for rank, (pos, rows, n_s, n_r, banks) in enumerate(kept[:top], start=1)]
+
+    def prec(positions: list[int]) -> dict:
+        tp = int(sum(y[q] for q in positions))
+        return {"k": len(positions), "true_laundering": tp, "precision": round(tp / len(positions), 4) if positions else None}
+
+    demo = next((a for a in alerts if int(a["trigger"].get("is_laundering") or 0) == 1), None)
+    meta = {
+        "model_sha256": model.get("sha256"), "model_round": model.get("round"),
+        "n_scored": int(len(df)), "prevalence": round(float(y.mean()), 6) if len(y) else None,
+        "filter": {"exclude_same_account": exclude_self, "min_banks": min_banks},
+        "unfiltered": {**prec([int(q) for q in raw]), "same_account_in_top": int(self_mask[raw].sum())},
+        "filtered": {f"at_{len(kept[:k])}": prec([q for q, *_ in kept[:k]]) for k in (top,) + tuple(extra_k)},
+        "removed_while_ranking": {"same_account": skipped_self, "fewer_than_min_banks": skipped_banks},
+        "same_account_rows_in_sample": int(self_mask.sum()),
+        "same_account_laundering_in_sample": int(y[self_mask].sum()),
+        "demo_alert_id": demo["alert_id"] if demo else None,
+        "demo_alert_rule": "highest-ranked alert after the filter whose trigger is labelled laundering",
+    }
+    return alerts, meta
 
 
 def write_json_atomic(path: str, obj) -> None:
@@ -196,6 +247,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-rows", type=int, default=10)
     ap.add_argument("--nrows", type=int, default=None, help="read only the first N rows (debug)")
     ap.add_argument("--bank-map", default=None, help="data/bank_map.json (default: next to --test)")
+    ap.add_argument("--min-banks", type=int, default=2, help="drop chains touching fewer banks (default 2)")
+    ap.add_argument("--keep-same-account", action="store_true", help="do not drop from_acct == to_acct rows")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -207,11 +260,15 @@ def main(argv: list[str] | None = None) -> int:
     labels = load_bank_labels(args.bank_map or os.path.join(os.path.dirname(args.test) or ".", "bank_map.json"))
     log.info("loaded %s: %d rows, laundering rate %.5f", args.test, len(df), df["is_laundering"].mean())
     model = load_model(args.model)
-    alerts = build_alerts(df, model, args.top, args.max_rows, labels)
-    write_json_atomic(args.out, alerts)
-    hit = sum(int(a["trigger"].get("is_laundering") or 0) for a in alerts)
-    log.info("wrote %d alerts to %s (top score %.4f, %d/%d triggers are labelled laundering)",
-             len(alerts), args.out, alerts[0]["score"] if alerts else 0.0, hit, len(alerts))
+    alerts, meta = build_alerts(df, model, args.top, args.max_rows, labels,
+                                exclude_self=not args.keep_same_account, min_banks=args.min_banks)
+    write_json_atomic(args.out, {"meta": meta, "alerts": alerts})
+    u, f = meta["unfiltered"], meta["filtered"][f"at_{len(alerts)}"] if alerts else {}
+    log.info("unfiltered top-%d: %d/%d labelled laundering, %d same-account", u["k"], u["true_laundering"], u["k"],
+             u["same_account_in_top"])
+    log.info("filtered: %s; removed while ranking: %s; demo alert %s", meta["filtered"],
+             meta["removed_while_ranking"], meta["demo_alert_id"])
+    log.info("wrote %d alerts to %s (top score %.4f)", len(alerts), args.out, alerts[0]["score"] if alerts else 0.0)
     return 0
 
 

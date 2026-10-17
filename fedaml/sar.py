@@ -32,9 +32,10 @@ ACCOUNT_LIKE = re.compile(r"\b(?=[0-9A-Fa-f]*[A-Fa-f])[0-9A-Fa-f]{6,}\b|\b\d{7,}
 
 
 def load_alerts(path: str) -> list[dict]:
-    """Read state/alerts.json (list of alerts)."""
+    """Read state/alerts.json: ``{"meta", "alerts"}`` or a bare list (older format)."""
     with open(path) as f:
-        return json.load(f)
+        data = json.load(f)
+    return data["alerts"] if isinstance(data, dict) else data
 
 
 def find_alert(alerts: list[dict], alert_id: str) -> dict:
@@ -192,7 +193,7 @@ def write_sar(alert: dict, model: dict | None, engine: str, out_dir: str, *, max
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Write a SAR for a flagged chain")
-    ap.add_argument("--alert-id", help="e.g. A01; see --list")
+    ap.add_argument("--alert-id", help="e.g. A01, or 'demo' for meta.demo_alert_id; see --list")
     ap.add_argument("--all", action="store_true", help="generate for every alert")
     ap.add_argument("--list", action="store_true", help="print alert ids and scores and exit")
     ap.add_argument("--engine", choices=["llm", "template"], default="llm")
@@ -209,12 +210,20 @@ def main(argv: list[str] | None = None) -> int:
     alerts = load_alerts(args.alerts)
     if args.list:
         for a in alerts:
-            print(f"{a['alert_id']}  score={a['score']:.4f}  banks={a['banks_involved']}  rows={len(a['rows'])}")
+            lab = int(a["trigger"].get("is_laundering") or 0)
+            print(f"{a['alert_id']}  score={a['score']:.4f}  laundering={lab}  banks={a['banks_involved']}  "
+                  f"rows={len(a['rows'])}")
         return 0
     model = None
     if os.path.exists(args.model):
         with open(args.model) as f:
             model = json.load(f)
+    if args.alert_id == "demo":
+        with open(args.alerts) as f:
+            data = json.load(f)
+        args.alert_id = (data.get("meta", {}) if isinstance(data, dict) else {}).get("demo_alert_id")
+        if not args.alert_id:
+            ap.error("alerts.json has no demo_alert_id (no labelled-laundering trigger after the filter)")
     targets = alerts if args.all else [find_alert(alerts, args.alert_id or "")]
     if not args.all and not args.alert_id:
         ap.error("--alert-id is required unless --all or --list")
