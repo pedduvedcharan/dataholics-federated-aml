@@ -162,9 +162,10 @@ services:
     # SAR writer. Usage: ALERT_ID=A07 docker compose run --rm genai   (ids A01..A20 from state/alerts.json; SAR_ENGINE=llm|template)
     # `--all` and `--list` also exist (fedaml.sar). Template fallback is automatic on LLM timeout (60 s) or hallucinated ids.
     # NOTE: no `${VAR:?}` guards anywhere: compose interpolates the whole file before applying profiles, so a guard breaks `docker compose up`.
-    command: python3 -m fedaml.sar --alert-id ${ALERT_ID:-A01} --engine ${SAR_ENGINE:-llm}
+    command: python3 -m fedaml.sar --alert-id ${ALERT_ID:-A01} --engine ${SAR_ENGINE:-template}
     # No depends_on on llm (GENAI ask, 15:58): template runs must never start the LLM. Sequence for LLM SARs:
-    #   docker compose up -d llm && ALERT_ID=A01 docker compose run --rm genai && docker compose stop llm
+    #   docker compose up -d --wait llm && SAR_ENGINE=llm ALERT_ID=A01 docker compose run --rm genai && docker compose stop llm
+    # Default engine is template (always works, ~7 s); SAR_ENGINE=llm is explicit so nobody waits out the 60 s LLM timeout by accident.
     environment:
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
