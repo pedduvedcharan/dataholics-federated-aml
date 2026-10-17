@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Regulator View — Cross-Bank AML</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232322;
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s7: #9085e9;
+    --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --crit: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); color: var(--ink);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { padding: 10px 16px 24px; }
+  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: 0.01em; }
+  header .sub { color: var(--ink-2); font-size: 12px; }
+  header .right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
+    color: var(--ink-2); background: var(--surface); white-space: nowrap; }
+  .pill.on  { border-color: var(--good); color: var(--ink); }
+  .pill.off { color: var(--muted); }
+  .pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; background: var(--muted); vertical-align: 1px; }
+  .pill.on .dot { background: var(--good); }
+  .pill.live .dot { background: var(--good); box-shadow: 0 0 0 3px rgba(12,163,12,0.25); }
+  .pill.offline .dot { background: var(--crit); }
+  #banner { display: none; background: #3a2a00; color: #ffd98a; border: 1px solid var(--warn);
+    padding: 6px 12px; border-radius: 6px; margin-bottom: 10px; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+  .panel.wide { grid-column: 1 / -1; }
+  .panel h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); display: flex; gap: 10px; align-items: baseline; }
+  .panel h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
+  .waiting { color: var(--muted); font-style: italic; padding: 8px 0; }
+  /* regulator view */
+  .reg { display: grid; grid-template-columns: 1.15fr 1fr 1fr 1fr 2.2fr; gap: 12px; align-items: stretch; }
+  .tile { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; border: 1px solid var(--border); }
+  .tile .lbl { font-size: 11px; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.06em; }
+  .tile .val { font-size: 36px; line-height: 1.1; font-weight: 650; margin-top: 2px; }
+  .tile .meta { font-size: 11px; color: var(--muted); margin-top: 2px; min-height: 14px; }
+  .tile.good { border-color: var(--good); }
+  .tile.good .val { color: var(--good); }
+  .tile.crit { border-color: var(--crit); }
+  .tile.crit .val { color: var(--crit); }
+  .tile .val .ic { font-size: 22px; vertical-align: 6px; margin-right: 4px; }
+  .tail { background: #121211; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+    font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; height: 100%; }
+  .tail .l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+  .tail .l .t { color: var(--muted); }
+  .tail .l .k { color: var(--s1); }
+  .tail .l.blocked { color: var(--crit); font-weight: 600; }
+  .tail .l.blocked .k { color: var(--crit); }
+  .tail .l.failed { color: var(--serious); }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 3px 8px 3px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; }
+  td.num, th.num { text-align: right; padding-right: 0; }
+  tr.ex td { background: rgba(208,59,59,0.10); }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .tag.ok { background: rgba(12,163,12,0.18); color: #6fe06f; }
+  .tag.bad { background: rgba(208,59,59,0.20); color: #ff8a8a; }
+  .tag.warn { background: rgba(250,178,25,0.18); color: #ffd98a; }
+  .chartbox { position: relative; height: 210px; }
+  .legendrow { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--ink-2); margin-top: 4px; }
+  .legendrow .sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: 3px; margin-right: 5px; }
+  /* privacy meter */
+  .meter { margin: 6px 0 8px; }
+  .meter .bar { height: 22px; background: var(--surface-2); border-radius: 6px; border: 1px solid var(--border); overflow: hidden; position: relative; }
+  .meter .fill { height: 100%; width: 0; background: var(--good); transition: width .6s ease; border-radius: 5px 0 0 5px; }
+  .meter .fill.warn { background: var(--warn); } .meter .fill.serious { background: var(--serious); } .meter .fill.crit { background: var(--crit); }
+  .meter .ticks { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .big { font-size: 28px; font-weight: 650; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; }
+  .verdict { padding: 8px 10px; border-radius: 6px; font-weight: 600; margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+  .verdict.good { background: rgba(12,163,12,0.15); border: 1px solid var(--good); }
+  .verdict.bad { background: rgba(208,59,59,0.15); border: 1px solid var(--crit); }
+  .verdict.warn { background: rgba(250,178,25,0.12); border: 1px solid var(--warn); }
+  .hbar { display: inline-block; height: 10px; background: var(--s1); border-radius: 0 3px 3px 0; vertical-align: middle; margin-right: 6px; }
+  .foot { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; }
+  @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } .reg { grid-template-columns: 1fr 1fr; } .foot { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Regulator view · cross-bank AML federation</h1>
+  <span class="sub">IBM LinuxONE (s390x) · sandboxed containers · only model updates leave a bank</span>
+  <div class="right">
+    <span class="pill" id="pill-status"><span class="dot"></span>status.json</span>
+    <span class="pill" id="pill-baselines"><span class="dot"></span>baselines.json</span>
+    <span class="pill" id="pill-redteam"><span class="dot"></span>redteam.json</span>
+    <span class="pill" id="pill-footprint"><span class="dot"></span>footprint.json</span>
+    <span class="pill" id="pill-live"><span class="dot"></span>connecting…</span>
+  </div>
+</header>
+<div id="banner">⚠ SAMPLE DATA — synthetic files for layout testing, not results from the VM</div>
+
+<div class="grid">
+
+  <section class="panel wide" id="p-reg">
+    <h2>1 · Regulator view — egress audit <span class="note" id="reg-note">waiting for logs/egress</span></h2>
+    <div class="reg">
+      <div class="tile good" id="t-rows"><div class="lbl">Transaction rows shared</div><div class="val"><span class="ic">✔</span><span id="v-rows">0</span></div><div class="meta" id="m-rows">across all banks, all rounds</div></div>
+      <div class="tile"><div class="lbl">Model parameters shared</div><div class="val" id="v-params">—</div><div class="meta" id="m-params"></div></div>
+      <div class="tile"><div class="lbl">Messages</div><div class="val" id="v-msgs">—</div><div class="meta" id="m-msgs"></div></div>
+      <div class="tile" id="t-blocked"><div class="lbl">Blocked attempts</div><div class="val" id="v-blocked">—</div><div class="meta" id="m-blocked"></div></div>
+      <div class="tail" id="tail"><div class="l"><span class="t">waiting for the first egress line…</span></div></div>
+    </div>
+  </section>
+
+  <section class="panel" id="p-train">
+    <h2>2 · Training — global AUC per round <span class="note" id="train-note"></span></h2>
+    <div class="chartbox"><canvas id="aucChart"></canvas></div>
+    <div class="legendrow" id="auc-legend"></div>
+    <div id="train-table" style="margin-top:6px; max-height: 96px; overflow:auto;"></div>
+  </section>
+
+  <section class="panel" id="p-priv">
+    <h2>3 · Privacy budget <span class="note">ε is approximate (Gaussian mechanism, simple composition)</span></h2>
+    <div id="priv-body" class="waiting">waiting for status.json</div>
+  </section>
+
+  <section class="panel" id="p-rogue">
+    <h2>4 · Rogue bank — accepted / excluded per round <span class="note" id="rogue-note"></span></h2>
+    <div id="rogue-body" class="waiting">waiting for status.json</div>
+  </section>
+
+  <section class="panel" id="p-red">
+    <h2>5 · Red team — membership inference, DP off vs on <span class="note">synthetic attack by our own team</span></h2>
+    <div id="red-body" class="waiting">waiting for redteam.json</div>
+  </section>
+
+  <section class="panel wide" id="p-foot">
+    <h2>6 · Footprint on LinuxONE <span class="note">measured with docker stats, not estimated</span></h2>
+    <div id="foot-body" class="waiting">waiting for footprint.json</div>
+  </section>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtInt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-US');
+const f3 = x => (x == null || isNaN(x)) ? '—' : Number(x).toFixed(3);
+const f2 = x => (x == null || isNaN(x)) ? '—' : Number(x).toFixed(2);
+const kb = b => b == null ? '—' : (b < 1024 ? b + ' B' : (b / 1024).toFixed(1) + ' KB');
+const hhmmss = iso => { try { return new Date(iso).toLocaleTimeString('en-GB', {hour12:false}); } catch (e) { return '—'; } };
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+function setPill(id, info, label) {
+  const p = $(id); if (!p) return;
+  const ok = info && info.present;
+  p.className = 'pill ' + (ok ? 'on' : 'off');
+  p.innerHTML = '<span class="dot"></span>' + esc(label) + (ok && info.age_s != null ? ' · ' + (info.age_s < 90 ? Math.round(info.age_s) + 's' : Math.round(info.age_s / 60) + 'm') : ' · missing');
+}
+
+/* ---------- 1. regulator view ---------- */
+function renderRegulator(s) {
+  const eg = s.egress || {}; const t = eg.totals || {}; const pb = eg.per_bank || {};
+  const banks = Object.keys(pb).length;
+  const rows = t.rows_shared || 0;
+  $('v-rows').textContent = fmtInt(rows);
+  $('t-rows').className = 'tile ' + (rows === 0 ? 'good' : 'crit');
+  $('m-rows').textContent = banks ? `${banks} bank${banks > 1 ? 's' : ''} audited · ${fmtInt(t.messages || 0)} updates inspected` : 'across all banks, all rounds';
+  $('v-params').textContent = fmtInt(t.params_shared);
+  $('m-params').textContent = t.bytes ? `${kb(t.bytes)} of clipped + noised weight deltas` : '';
+  $('v-msgs').textContent = fmtInt(t.messages);
+  $('m-msgs').textContent = banks ? Object.entries(pb).map(([b, e]) => `b${b}:${e.messages}`).join(' ') : '';
+  const bl = t.blocked || 0;
+  $('v-blocked').textContent = fmtInt(bl);
+  $('t-blocked').className = 'tile ' + (bl > 0 ? 'crit' : '');
+  $('m-blocked').textContent = bl > 0 ? 'raw rows refused at the egress door' : 'no violation attempted yet';
+  $('reg-note').textContent = banks ? `logs/egress · ${s.files && s.files['logs/egress'] ? s.files['logs/egress'].n_files : banks} files` : 'waiting for logs/egress';
+
+  const tail = (eg.tail || []).slice(-10);
+  if (tail.length) {
+    $('tail').innerHTML = tail.map(r => {
+      const kind = r.kind || '?';
+      let body;
+      if (kind === 'blocked') body = `<span class="k">BLOCKED</span> bank ${esc(r.bank_id)} r${esc(r.round)} — ${esc(r.reason || '')}`;
+      else if (kind === 'send_failed') body = `<span class="k">send_failed</span> bank ${esc(r.bank_id)} r${esc(r.round)} — ${esc(r.error || '')}`;
+      else body = `<span class="k">${esc(kind)}</span> bank ${esc(r.bank_id)} r${esc(r.round)} · ${kb(r.bytes)} · params=${esc(r.params_shared)} rows=${esc(r.rows_shared)} · sha ${esc(String(r.sha256 || '').slice(0, 10))}`;
+      const cls = kind === 'blocked' ? 'blocked' : (kind === 'send_failed' ? 'failed' : '');
+      return `<div class="l ${cls}"><span class="t">${hhmmss(r.ts)}</span> ${body}</div>`;
+    }).join('');
+  }
+}
+
+/* ---------- 2. training chart ---------- */
+let aucChart = null;
+const endLabel = {  // direct-label the last point of selected datasets
+  id: 'endLabel',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    ctx.save(); ctx.font = '600 11px system-ui, sans-serif'; ctx.textBaseline = 'middle';
+    chart.data.datasets.forEach((ds, i) => {
+      if (!ds.endLabel) return;
+      const meta = chart.getDatasetMeta(i); if (!meta.data.length || meta.hidden) return;
+      const pt = meta.data[meta.data.length - 1];
+      ctx.fillStyle = ds.borderColor; ctx.fillText(ds.endLabel, pt.x + 6, pt.y + (ds.endOffset || 0));
+    });
+    ctx.restore();
+  }
+};
+function bestLocal(bank) {  // best single-model AUC for a bank from baselines.json
+  let best = null;
+  for (const [m, v] of Object.entries(bank || {})) if (v && typeof v.auc === 'number' && (!best || v.auc > best.auc)) best = { model: m, auc: v.auc };
+  return best;
+}
+function renderTraining(s) {
+  const st = s.status, bl = s.baselines;
+  const rounds = (st && Array.isArray(st.rounds)) ? st.rounds.filter(r => r && r.round != null) : [];
+  const labels = rounds.map(r => 'r' + r.round);
+  const auc = rounds.map(r => r.global_auc);
+  const n = Math.max(labels.length, 2);
+  const flat = v => Array(n).fill(v);
+  const xs = labels.length >= 2 ? labels : (labels.length === 1 ? [labels[0], ''] : ['r1', 'r2']);
+  const datasets = [{ label: 'Global federated AUC', data: auc, borderColor: css('--s1'), backgroundColor: css('--s1'),
+    borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.15, endLabel: auc.length ? f3(auc[auc.length - 1]) : '' }];
+  const legend = [{ c: css('--s1'), t: 'global federated AUC' }];
+  if (bl) {
+    const c = bl.centralized_logreg && bl.centralized_logreg.auc;
+    if (typeof c === 'number') {
+      datasets.push({ label: 'Centralized ceiling', data: flat(c), borderColor: css('--s2'), borderWidth: 1.5, pointRadius: 0, borderDash: [6, 4], endLabel: f3(c) });
+      legend.push({ c: css('--s2'), t: 'centralized logreg ceiling (illegal pooling) ' + f3(c) });
+    }
+    const locals = Object.entries(bl.per_bank || {}).map(([b, m]) => [b, bestLocal(m)]).filter(x => x[1]);
+    locals.forEach(([b, v], i) => datasets.push({ label: `Bank ${b} best local (${v.model})`, data: flat(v.auc), borderColor: css('--muted'),
+      borderWidth: 1, pointRadius: 0, endLabel: i === 0 ? 'one bank' : '', endOffset: 0 }));
+    if (locals.length) legend.push({ c: css('--muted'), t: 'each bank alone, best of logreg/rf/hgb: ' + locals.map(([b, v]) => `b${b} ${f3(v.auc)}`).join(' · ') });
+  }
+  $('auc-legend').innerHTML = legend.map(l => `<span><span class="sw" style="border-color:${l.c}"></span>${esc(l.t)}</span>`).join('');
+  $('train-note').textContent = st ? `round ${st.round ?? '?'} of ${st.total_rounds ?? '?'}` + (st.dp && st.dp.enabled ? ' · DP on' : ' · DP off') : 'waiting for status.json';
+
+  if (typeof Chart === 'undefined') { $('aucChart').parentElement.innerHTML = '<div class="waiting">Chart.js not loaded (no CDN access) — see table below</div>'; }
+  else if (!aucChart) {
+    aucChart = new Chart($('aucChart'), { type: 'line', data: { labels: xs, datasets }, plugins: [endLabel], options: {
+      animation: false, responsive: true, maintainAspectRatio: false, layout: { padding: { right: 64 } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${f3(c.parsed.y)}` } } },
+      scales: { x: { grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') } },
+                y: { min: 0.5, max: 1.0, grid: { color: css('--grid') }, ticks: { color: css('--muted'), stepSize: 0.1 }, border: { color: css('--axis') },
+                     title: { display: true, text: 'ROC AUC on global_test.csv', color: css('--muted'), font: { size: 11 } } } } } });
+  } else { aucChart.data.labels = xs; aucChart.data.datasets = datasets; aucChart.update('none'); }
+
+  if (rounds.length) {
+    const banks = Object.keys(rounds[rounds.length - 1].per_bank_auc || {});
+    $('train-table').innerHTML = `<table><tr><th>round</th><th class="num">global AUC</th><th class="num">AP</th>${banks.map(b => `<th class="num">b${esc(b)} AUC</th>`).join('')}</tr>` +
+      rounds.slice().reverse().map(r => `<tr><td>${esc(r.round)}</td><td class="num">${f3(r.global_auc)}</td><td class="num">${f3(r.global_ap)}</td>${banks.map(b => `<td class="num">${f3((r.per_bank_auc || {})[b])}</td>`).join('')}</tr>`).join('') + '</table>';
+  } else $('train-table').innerHTML = '<div class="waiting">no rounds completed yet</div>';
+}
+
+/* ---------- 3. privacy budget ---------- */
+function renderPrivacy(s) {
+  const st = s.status; const budget = s.eps_budget || 8;
+  if (!st || !st.dp) { $('priv-body').className = 'waiting'; $('priv-body').textContent = 'waiting for status.json'; return; }
+  const dp = st.dp; const eps = typeof dp.epsilon_spent === 'number' ? dp.epsilon_spent : null;
+  const frac = eps == null ? 0 : Math.min(1, eps / budget);
+  const cls = frac >= 1 ? 'crit' : frac >= 0.8 ? 'serious' : frac >= 0.5 ? 'warn' : '';
+  const stateTxt = !dp.enabled ? '<span class="tag bad">DP OFF — unprotected run</span>' : frac >= 1 ? '<span class="tag bad">⚠ budget exhausted</span>' : frac >= 0.8 ? '<span class="tag warn">▲ nearing budget</span>' : '<span class="tag ok">✔ within budget</span>';
+  $('priv-body').className = '';
+  $('priv-body').innerHTML = `
+    <div style="display:flex; align-items:baseline; gap:12px;"><span class="big">ε ≈ ${eps == null ? '—' : f2(eps)}</span><span style="color:var(--ink-2)">of budget ${budget}</span>${stateTxt}</div>
+    <div class="meter"><div class="bar"><div class="fill ${cls}" style="width:${(frac * 100).toFixed(1)}%"></div></div>
+      <div class="ticks"><span>0</span><span>${(budget / 2)}</span><span>${budget}</span></div></div>
+    <dl class="kv">
+      <dt>Noise multiplier σ</dt><dd>${esc(dp.sigma ?? '—')} <span style="color:var(--muted)">(Gaussian std = σ · clip)</span></dd>
+      <dt>Clip norm (L2)</dt><dd>${esc(dp.clip_norm ?? '—')} <span style="color:var(--muted)">per update, applied inside the bank</span></dd>
+      <dt>δ</dt><dd>${esc(dp.delta ?? '—')}</dd>
+      <dt>Rounds composed</dt><dd>${esc(st.round ?? '—')} of ${esc(st.total_rounds ?? '—')}</dd>
+    </dl>
+    <p style="color:var(--muted); font-size:12px; margin:10px 0 0">Each bank clips its weight delta to the L2 norm above and adds Gaussian noise before it reaches the egress door, so the coordinator never sees an exact update. ε grows with every round; the meter turns amber at 50% and red at 80% of the budget.</p>`;
+}
+
+/* ---------- 4. rogue bank ---------- */
+function renderRogue(s) {
+  let st = s.status; let src = 'status.json';
+  const hasEx = x => x && Array.isArray(x.rounds) && x.rounds.some(r => (r.excluded || []).length);
+  if (!hasEx(st) && hasEx(s.status_rogue_on)) { st = s.status_rogue_on; src = 'status_rogue_on.json'; }
+  const rounds = (st && Array.isArray(st.rounds)) ? st.rounds : [];
+  if (!rounds.length) { $('rogue-body').className = 'waiting'; $('rogue-body').textContent = 'waiting for completed rounds'; return; }
+  const exCount = {}; rounds.forEach(r => (r.excluded || []).forEach(e => { exCount[e.bank_id] = (exCount[e.bank_id] || 0) + 1; }));
+  const summary = Object.entries(exCount).map(([b, c]) => `bank ${b} excluded in ${c}/${rounds.length} rounds`).join(' · ') || 'no exclusions so far';
+  let cmp = '';
+  const off = s.status_rogue_off, on = s.status_rogue_on;
+  const lastAuc = x => (x && Array.isArray(x.rounds) && x.rounds.length) ? x.rounds[x.rounds.length - 1].global_auc : null;
+  if (lastAuc(off) != null && lastAuc(on) != null) cmp = ` · final AUC defense off ${f3(lastAuc(off))} → on ${f3(lastAuc(on))}`;
+  $('rogue-note').textContent = src + (st.banks_expected ? ` · expected banks ${st.banks_expected.join(',')}` : '');
+  $('rogue-body').className = '';
+  $('rogue-body').innerHTML = `<div style="margin-bottom:6px">${esc(summary)}${esc(cmp)}</div>
+    <div style="max-height:150px; overflow:auto"><table><tr><th>round</th><th>accepted</th><th>excluded</th><th>reason</th><th class="num">score</th></tr>` +
+    rounds.slice().reverse().map(r => {
+      const ex = r.excluded || [];
+      if (!ex.length) return `<tr><td>${esc(r.round)}</td><td>${esc((r.accepted || []).join(', '))}</td><td><span class="tag ok">none</span></td><td></td><td></td></tr>`;
+      return ex.map((e, i) => `<tr class="ex"><td>${i ? '' : esc(r.round)}</td><td>${i ? '' : esc((r.accepted || []).join(', '))}</td><td><span class="tag bad">✖ bank ${esc(e.bank_id)}</span></td><td>${esc(e.reason || '')}</td><td class="num">${f3(e.score)}</td></tr>`).join('');
+    }).join('') + '</table></div>';
+}
+
+/* ---------- 5. red team ---------- */
+function renderRedteam(s) {
+  const rt = s.redteam;
+  if (!rt) { $('red-body').className = 'waiting'; $('red-body').textContent = 'waiting for redteam.json (run: python -m fedaml.redteam …)'; return; }
+  const off = rt.dp_off || {}, on = rt.dp_on || {};
+  const accOff = off.attack_acc, accOn = on.attack_acc;
+  let vcls = 'warn', vtxt = 'red-team results incomplete';
+  if (typeof accOff === 'number' && typeof accOn === 'number') {
+    const drop = accOff - accOn;
+    if (accOn <= 0.55) { vcls = 'good'; vtxt = `✔ PROTECTED — with DP the attacker guesses membership at ${(accOn * 100).toFixed(0)}% (coin flip = 50%), down from ${(accOff * 100).toFixed(0)}%`; }
+    else if (drop >= 0.03) { vcls = 'warn'; vtxt = `▲ PARTIAL — DP cut attack accuracy by ${(drop * 100).toFixed(0)} points, still ${(accOn * 100).toFixed(0)}%`; }
+    else { vcls = 'bad'; vtxt = `✖ EXPOSED — DP did not reduce attack accuracy (${(accOff * 100).toFixed(0)}% → ${(accOn * 100).toFixed(0)}%)`; }
+  }
+  const row = (k, a, b, f) => `<tr><td>${k}</td><td class="num">${f(a)}</td><td class="num">${f(b)}</td></tr>`;
+  $('red-body').className = '';
+  $('red-body').innerHTML = `<table><tr><th>attack: ${esc(rt.attack || '?')}</th><th class="num">DP off</th><th class="num">DP on</th></tr>
+    ${row('attack accuracy (0.5 = chance)', accOff, accOn, f3)}
+    ${row('attack AUC', off.attack_auc, on.attack_auc, f3)}
+    ${row('samples attacked', off.n, on.n, fmtInt)}
+    ${row('model AUC (utility cost)', rt.model_auc_off, rt.model_auc_on, f3)}</table>
+    <div class="verdict ${vcls}">${esc(vtxt)}</div>`;
+}
+
+/* ---------- 6. footprint ---------- */
+function renderFootprint(s) {
+  const fp = s.footprint;
+  if (!fp) { $('foot-body').className = 'waiting'; $('foot-body').textContent = 'waiting for footprint.json (INFRA: scripts/footprint.sh)'; return; }
+  const rss = fp.per_container_peak_rss_mb || {}; const max = Math.max(1, ...Object.values(rss).map(Number));
+  const total = Object.values(rss).reduce((a, b) => a + Number(b || 0), 0);
+  $('foot-body').className = '';
+  $('foot-body').innerHTML = `<div class="foot"><div><table><tr><th>container</th><th>peak RSS</th></tr>` +
+    Object.entries(rss).sort((a, b) => Number(b[1]) - Number(a[1])).map(([c, v]) => `<tr><td>${esc(c)}</td><td><span class="hbar" style="width:${(120 * Number(v) / max).toFixed(0)}px"></span>${fmtInt(Math.round(v))} MB</td></tr>`).join('') +
+    `</table></div><dl class="kv">
+      <dt>Seconds per round</dt><dd class="big" style="font-size:22px">${fp.seconds_per_round == null ? '—' : f2(fp.seconds_per_round)} s</dd>
+      <dt>Total runtime</dt><dd>${fp.total_runtime_s == null ? '—' : fmtInt(Math.round(fp.total_runtime_s)) + ' s'}</dd>
+      <dt>Sum of container peaks</dt><dd>${fmtInt(Math.round(total))} MB of 8 192 MB</dd>
+      <dt>Machine</dt><dd>${esc(fp.arch || '?')} · ${esc(fp.cpu_count ?? '?')} cores · IBM LinuxONE Community Cloud</dd></dl></div>`;
+}
+
+/* ---------- loop ---------- */
+let failures = 0;
+async function tick() {
+  try {
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const s = await r.json();
+    failures = 0;
+    const f = s.files || {};
+    setPill('pill-status', f['status.json'], 'status.json');
+    setPill('pill-baselines', f['baselines.json'], 'baselines.json');
+    setPill('pill-redteam', f['redteam.json'], 'redteam.json');
+    setPill('pill-footprint', f['footprint.json'], 'footprint.json');
+    $('pill-live').className = 'pill on live'; $('pill-live').innerHTML = '<span class="dot"></span>live · ' + hhmmss(s.now) + ' UTC';
+    $('banner').style.display = (s.status && s.status.synthetic_sample) ? 'block' : 'none';
+    renderRegulator(s); renderTraining(s); renderPrivacy(s); renderRogue(s); renderRedteam(s); renderFootprint(s);
+  } catch (e) {
+    failures++;
+    $('pill-live').className = 'pill offline'; $('pill-live').innerHTML = '<span class="dot"></span>offline · ' + esc(e.message);
+  }
+}
+tick(); setInterval(tick, 3000);
+</script>
+</body>
+</html>
