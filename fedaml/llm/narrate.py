@@ -19,7 +19,9 @@ SYSTEM_PROMPT = (
     "Suspicious Activity Report. Write in formal, neutral English. Never state that a crime "
     "occurred; describe indicators and recommend review. You must not invent any account number, "
     "amount, date, bank name or statistic: refer to them ONLY with the placeholder tokens given in "
-    "square brackets, exactly as written. Output must be a single JSON object and nothing else."
+    "square brackets, exactly as written. The cross-bank model ranked this transaction among the most "
+    "suspicious in the sample, so never describe the score as low. Do not repeat sentences. Output must be "
+    "a single JSON object and nothing else."
 )
 
 PLACEHOLDER_HELP = (
@@ -47,9 +49,13 @@ def build_user_prompt(alert: dict) -> str:
         f"Model indicators, strongest first:\n{indicators}\n\n"
         f"Token meanings: {PLACEHOLDER_HELP}.\n\n"
         "Return JSON with exactly these keys:\n"
-        '{"summary": "<2-4 sentences describing the activity using the tokens>",\n'
-        ' "pattern_indicators": ["<one sentence per indicator above, in plain English>", ...],\n'
-        ' "recommended_action": "<2-3 sentences of concrete next steps for the compliance officer>"}'
+        '{"summary": "Account [SENDER] at bank [SENDER_BANK] ... <3 sentences: what was paid to [RECEIVER] at bank '
+        "[RECEIVER_BANK], what the sender and receiver did around it ([N_SENDER_OTHER], [N_DISTINCT_RECEIVERS], "
+        '[N_RECEIVER_ONWARD]), and the size of the chain ([N_ROWS] transactions, [TOTAL_AMT], [N_BANKS] institutions)>",\n'
+        ' "pattern_indicators": ["<one plain-English sentence per indicator above, for a compliance officer, '
+        'in your own words>", ...],\n'
+        ' "recommended_action": "<2-3 sentences of concrete next steps for the compliance officer at bank '
+        '[SENDER_BANK], mentioning account [SENDER] and the other institutions [BANKS]>"}'
     )
 
 
@@ -66,7 +72,23 @@ def parse_response(text: str) -> dict[str, str]:
             raise ValueError(f"LLM output missing key {key!r}")
         if isinstance(v, list):
             v = "\n".join(f"- {str(x).strip()}" for x in v if str(x).strip())
-        out[key] = str(v).strip()
+        out[key] = _dedupe_sentences(str(v).strip())
         if not out[key]:
             raise ValueError(f"LLM output has empty {key!r}")
+    for tok in ("[SENDER]", "[RECEIVER]"):
+        if tok not in out["summary"]:
+            raise ValueError(f"LLM summary does not reference {tok}")
     return out
+
+
+def _dedupe_sentences(text: str) -> str:
+    """Drop exact repeats of a sentence (small models loop); keeps order and bullets."""
+    seen: set[str] = set()
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?])\s+", text):
+        key = re.sub(r"\W+", " ", part).strip().lower()
+        if key and key in seen:
+            continue
+        seen.add(key)
+        kept.append(part)
+    return " ".join(kept).strip()
