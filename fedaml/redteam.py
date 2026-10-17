@@ -201,9 +201,9 @@ def art_attack(model: dict, pop: Population, names: list[str], seed: int, calib_
     cm, em = _split(pop.n, calib_frac, rng)
     cn, en = _split(pop.n, calib_frac, rng)
     Xm, Xn = align_columns(pop.X_mem, names, want), align_columns(pop.X_non, names, want)
-    from sklearn.ensemble import RandomForestClassifier
     atk = MembershipInferenceBlackBox(ScikitlearnLogisticRegression(model=lr), input_type="prediction",
-                                      attack_model=RandomForestClassifier(n_estimators=100, random_state=seed, n_jobs=2))
+                                      attack_model_type="rf")
+    np.random.seed(seed)   # ART's internal RandomForest has no random_state; seed the global stream it draws from
     atk.fit(Xm[cm], pop.y_mem[cm], Xn[cn], pop.y_non[cn])
     p = np.r_[atk.infer(Xm[em], pop.y_mem[em], probabilities=True).ravel(),
               atk.infer(Xn[en], pop.y_non[en], probabilities=True).ravel()]
