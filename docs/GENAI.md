@@ -105,8 +105,8 @@ From `state/sar/_runs.jsonl`. "Wall" includes the `docker compose run` container
 | Alert | Trigger labelled laundering? | LLM seconds | Wall seconds | Completion tokens | Assessment words |
 |---|---|---|---|---|---|
 | A06 (demo, regenerated 16:35 after the fact-check fixes) | yes | 34.9 | 35.8 | 120 | 49 |
-| A07 | no | 30.7 | 31.6 | 160 | 72 |
-| A08 | no | 20.7 | 21.6 | 144 | 94 |
+| A07 | no | 34.9, then fell back | 35.6 | — | — |
+| A08 | no | template (LLM draft rejected in review) | under 1 | — | — |
 
 - The `llm` container (1.5B) was healthy 6 s after `docker compose up -d --wait llm`, at about 200 MB RSS plus the
   memory-mapped 1.8 GiB GGUF.
@@ -155,6 +155,17 @@ docker compose stop llm
   prompt carries the decoded counts, and the indicators state numbers instead of "many". Code drops LLM
   sentences with frequency, prevalence or size-of-count words (rarely, often, less common, many distinct, ...).
   The regenerated A06 paragraph was checked sentence by sentence against the code-written facts.
-- The paragraph can still be vague ("raise significant concerns"). A07 and A08 were generated before these fixes.
+- A count check drops any LLM sentence whose number contradicts the facts. "N other payments" must equal the
+  sender's other-payment count, and any other count must match one the report states. The verdict filter also
+  catches "launder", "laundering operation", "series of transactions" and "sophisticated".
+- **Outcome for the three recorded reports.** A06 kept its LLM paragraph after a claim-by-claim check.
+  A07's LLM draft claimed "two other payments" (the facts show 1); the count check removed that sentence, which
+  left 15 words, so it fell back to the template automatically. A08's LLM draft called a one-row chain "a
+  sophisticated attempt to launder funds through a series of transactions". After the filter, it still
+  speculated about a "larger money laundering or fraud scheme" and "layering" with no onward movement, so we
+  regenerated it with the template engine. Both A07 and A08 say "template engine" in their footers.
+- The lesson: a 1.5 B model's narration needs fact checks in code. Two of three drafts on real alerts made a
+  claim the facts contradict; the guardrails caught both, and the template always produces a correct report.
+- The A06 paragraph is still vague ("raise significant concerns").
 - Data are synthetic (IBM AML HI-Small). The outline follows a SAR narrative but is not a legal filing.
 - Speed numbers are single runs on one shared VM.
