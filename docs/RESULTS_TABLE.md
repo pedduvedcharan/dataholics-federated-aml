@@ -1,5 +1,3 @@
-27 20:53 state/global_final_dpon.json
-36 20:50 state/global_final_rogue_on.json
 # Results table (generated)
 
 Generated 2026-10-17 20:56 UTC on the LinuxONE VM by `python -m fedaml.results_table` from `state/`.
