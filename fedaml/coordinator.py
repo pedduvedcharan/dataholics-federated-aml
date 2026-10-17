@@ -356,8 +356,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--sigma", type=float, default=0.8, help="noise multiplier: noise std = sigma * clip")
     p.add_argument("--clip", type=float, default=1.0, help="L2 clip norm every bank applies to its delta")
     p.add_argument("--delta", type=float, default=1e-5, help="DP delta for the epsilon report")
-    p.add_argument("--dp-mode", choices=["central", "local"], default=os.environ.get("DP_MODE", "central"),
-                   help="central: coordinator noises the aggregate (default); local: each bank noises its delta")
+    p.add_argument("--dp-mode", choices=["central", "local"], default=os.environ.get("DP_MODE", "local"),
+                   help="local: each bank noises its delta before egress (default); central: coordinator noises the aggregate")
     p.add_argument("--defense", choices=["on", "off"], default="on")
     p.add_argument("--tau", type=float, default=float(os.environ.get("TAU", "1.5")),
                    help="max cosine distance to the median delta; 1.0 = orthogonal, 2.0 = opposite. Real shards: honest "
