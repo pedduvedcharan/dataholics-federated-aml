@@ -17,7 +17,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Pure-Python extras only.
-RUN pip install --no-cache-dir --break-system-packages phe requests
+RUN pip install --no-cache-dir --break-system-packages phe requests dilithium-py
 
 WORKDIR /app
 COPY fedaml /app/fedaml

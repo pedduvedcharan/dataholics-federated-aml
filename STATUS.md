@@ -30,6 +30,15 @@ VM clock is UTC (17:40 UTC == 12:40 CDT). Repo cloned at ~/fedaml (commit 07ae21
 ```
 SSH alias `dataholics` added to `~/.ssh/config` on the lead's Mac; key `~/Downloads/dataholics.pem` is mode 600.
 
+## INFRA: VM setup + Docker (done 12:55 CDT, logs on VM: `~/fedaml/logs/setup_vm.log`, `~/fedaml/logs/docker_build.log`)
+- `scripts/setup_vm.sh` ran clean. apt stack (s390x wheels from Ubuntu): numpy 1.26.4, scipy 1.11.4, pandas 2.1.4, sklearn 1.4.1.post1, flask 3.0.2, matplotlib 3.6.3, requests 2.31.0. Docker Compose 2.40.3 now installed.
+- venv: `~/fedaml/.venv` (`--system-site-packages`). Activate: `. ~/fedaml/.venv/bin/activate`.
+- pip results: **phe 1.5.0 OK, dilithium-py OK, adversarial-robustness-toolbox 1.20.1 OK** (ART warns PyTorch missing; sklearn estimators work). Nothing failed.
+- Docker: `docker run --rm ubuntu:24.04 uname -m` -> `s390x`. `docker build -t fedaml .` = **90 s**, image 926 MB, `docker run --rm fedaml` prints `fedaml image ok s390x 1.4.1.post1`. Image has phe + requests + dilithium-py (rebuilt after adding dilithium-py).
+- Layout on VM: `~/fedaml/data/{raw,banks}`, `~/fedaml/state`, `~/fedaml/logs/egress`. Compose mounts `./data ./state ./logs` into `/app/...`.
+- Helpers: `scripts/footprint.sh start|stop|report` (docker stats every 5 s -> `logs/footprint.log` -> `state/footprint.json`), `scripts/reset_run.sh [--down]`, `scripts/partition_when_landed.sh` (watcher running on the VM: partitions automatically once the CSV upload finishes; log `~/fedaml/logs/partition.log`).
+- Read partitioned CSVs with `dtype={'from_bank': str, 'to_bank': str, 'from_acct': str, 'to_acct': str}, parse_dates=['ts']` — account ids like `81245E60` turn into floats otherwise. `ts` is written as `YYYY-MM-DD HH:MM:SS`.
+
 ## Blockers
 - [12:45] **Kaggle `HI-Small_Trans.csv` not on the VM.** Needs: a teammate with a Kaggle login downloads it and runs `scp HI-Small_Trans.csv dataholics:~/fedaml/data/raw/`. Owner: P2 to name the downloader. Everything downstream waits on this.
 - ~~[12:45] `docker compose` plugin missing~~ → RESOLVED 12:50: Docker Compose 2.40.3 installed by `setup_vm.sh`.
