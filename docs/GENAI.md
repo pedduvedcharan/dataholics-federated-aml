@@ -65,7 +65,8 @@ Speed drops sharply under contention: during a parallel Docker build, Qwen 0.5B 
   contains anything shaped like an account id (hex of 6+ characters or 7+ digits) that is not in the alert.
 - The footer always states the engine and, on fallback, the reason.
 - The finished document is post-checked for account ids against the alert record whatever the engine.
-- `--engine template` never touches the network and always works. It is a legitimate deliverable.
+- `--engine template` never touches the network and always works. It is a legitimate deliverable. The module's
+  CLI defaults to `llm`; the compose `genai` service defaults to `template`, so pass `SAR_ENGINE=llm` there.
 
 ## Measured on the VM (real data)
 Interim model `state/global_final.json`, round 5, banks 1–2; `state/sar/_runs.jsonl`.
@@ -86,9 +87,9 @@ Interim model `state/global_final.json`, round 5, banks 1–2; `state/sar/_runs.
 ```
 docker build -f fedaml/llm/Dockerfile -t fedaml-llm .           # ~5.5 min on the VM, 289 MB image
 docker compose run --rm llm /app/fetch_model.sh                 # once: download + big-endian convert into ./models
-docker compose up -d llm                                        # llama-server on 127.0.0.1:8080, healthcheck /health
-ALERT_ID=A01 docker compose run --rm genai                      # SAR_ENGINE=llm by default, falls back to template
-ALERT_ID=A01 SAR_ENGINE=template docker compose run --rm genai  # never starts or needs the LLM
+docker compose up -d --wait llm                                 # llama-server on 127.0.0.1:8080, waits for /health
+SAR_ENGINE=llm ALERT_ID=A01 docker compose run --rm genai       # LLM engine, falls back to template on any failure
+ALERT_ID=A01 docker compose run --rm genai                      # compose default engine is template: never needs the LLM
 docker compose stop llm
 ```
 Weights live in the `./models` volume, not in the image. `fetch_model.sh` takes `MODEL_REPO` and `MODEL_FILE`
@@ -97,8 +98,8 @@ for other models.
 ## Which model, when (MASTER decision, Oct 17 16:00)
 | Use | Model | Command | Seconds per SAR |
 |---|---|---|---|
-| Anything live, default | Qwen2.5-0.5B-Instruct Q8_0 | `docker compose up -d llm` | about 10 |
-| The three recorded demo SARs A01–A03 | Qwen2.5-1.5B-Instruct Q8_0 | `LLM_MODEL_FILE=qwen2.5-1.5b-instruct-q8_0-be.gguf docker compose up -d llm` | about 41 |
+| Anything live, default | Qwen2.5-0.5B-Instruct Q8_0 | `docker compose up -d --wait llm` | about 10 |
+| The three recorded demo SARs A01–A03 | Qwen2.5-1.5B-Instruct Q8_0 | `LLM_MODEL_FILE=qwen2.5-1.5b-instruct-q8_0-be.gguf docker compose up -d --wait llm` | about 41 |
 
 Each SAR footer names the engine, the model file and the LLM seconds, so a reader can tell which one wrote it.
 Both GGUFs are in `~/fedaml/models` on the VM.
@@ -106,8 +107,8 @@ Both GGUFs are in `~/fedaml/models` on the VM.
 Run order after the integration run's training phase ends:
 ```
 docker compose run --rm alerts
-LLM_MODEL_FILE=qwen2.5-1.5b-instruct-q8_0-be.gguf docker compose up -d llm
-for a in A01 A02 A03; do ALERT_ID=$a docker compose run --rm genai; done
+LLM_MODEL_FILE=qwen2.5-1.5b-instruct-q8_0-be.gguf docker compose up -d --wait llm
+for a in A01 A02 A03; do SAR_ENGINE=llm ALERT_ID=$a docker compose run --rm genai; done
 docker compose stop llm
 ```
 
