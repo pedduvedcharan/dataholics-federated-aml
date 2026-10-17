@@ -81,7 +81,9 @@ wait_final() {  # $1 = epoch the phase started
 
 run_phase() {  # $1 = tag (dpoff|dpon), $2 = DP value
   local tag="$1" dp="$2" t; t=$(date +%s)
-  log "phase $tag: DP=$dp DP_MODE=${DP_MODE:-local} SIGMA=${SIGMA:-0.3} DEFENSE=on ROUNDS=${ROUNDS:-10} BANKS=${BANKS:-1,2,3,4,5} EVAL_BANKS=${EVAL_BANKS:-2,3,4} rogue=$([ "$DO_ROGUE" = 1 ] && echo on || echo off)"
+  local coord_cmd; coord_cmd=$(DP="$dp" TAG="$tag" $DC config --format json 2>/dev/null | python3 -c "import json,sys; print(' '.join(json.load(sys.stdin)['services']['coordinator']['command']))" 2>/dev/null)
+  log "phase $tag: coordinator = ${coord_cmd:-<could not render>}"
+  log "phase $tag: DP=$dp DP_MODE=${DP_MODE:-<compose default>} SIGMA=${SIGMA:-<compose default>} MU=${MU:-<compose default>} DEFENSE=on ROUNDS=${ROUNDS:-10} BANKS=${BANKS:-1,2,3,4,5} EVAL_BANKS=${EVAL_BANKS:-2,3,4} rogue=$([ "$DO_ROGUE" = 1 ] && echo on || echo off)"
   $DC rm -fs $TRAIN_SVCS rogue >/dev/null 2>&1 || true
   DP="$dp" DEFENSE=on TAG="$tag" $DC up -d $TRAIN_SVCS dashboard || die "docker compose up failed"
   sleep 3
