@@ -50,14 +50,20 @@ def load_model(path: str) -> dict:
     return m
 
 
-def score(df: pd.DataFrame, model: dict) -> tuple[np.ndarray, np.ndarray]:
-    """Return (probabilities, feature matrix) using the global logistic model."""
-    from fedaml.features import FEATURE_NAMES, featurize  # MODELS owns this (CONTRACTS §3)
+def score(df: pd.DataFrame, model: dict, cap: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """Return (probabilities, feature matrix) using the global logistic model.
+
+    ``cap=True`` clips ``log_amt`` with MODELS' ``cap_for_alerts`` before scoring: a post-hoc ranking rule
+    for the review queue only. Model AUC/AP are always reported on raw features elsewhere.
+    """
+    from fedaml.features import FEATURE_NAMES, cap_for_alerts, featurize  # MODELS owns this (CONTRACTS §3)
 
     names = model.get("feature_names", FEATURE_NAMES)
     if list(names) != list(FEATURE_NAMES):
         raise ValueError("model feature_names differ from fedaml.features.FEATURE_NAMES")
     X = featurize(df).astype(np.float64)
+    if cap:
+        X = cap_for_alerts(X)
     coef = np.asarray(model["coef"], dtype=np.float64)
     intercept = float(np.asarray(model["intercept"], dtype=np.float64).ravel()[0])
     z = X @ coef + intercept
@@ -174,7 +180,8 @@ def _alert(rank: int, pos: int, idx, p: np.ndarray, X: np.ndarray, coef: np.ndar
 
 def build_alerts(df: pd.DataFrame, model: dict, top: int = 20, max_rows: int = 10,
                  bank_labels: dict[str, str] | None = None, exclude_self: bool = True,
-                 min_banks: int = 2, extra_k: tuple[int, ...] = (50, 100)) -> tuple[list[dict], dict]:
+                 min_banks: int = 2, extra_k: tuple[int, ...] = (50, 100),
+                 cap: bool = True) -> tuple[list[dict], dict]:
     """Rank rows by score and keep the top ``top`` that pass the product filter.
 
     Filter (agreed with MASTER, Oct 17 16:16): skip same-account transfers (``from_acct == to_acct``,
@@ -182,7 +189,7 @@ def build_alerts(df: pd.DataFrame, model: dict, top: int = 20, max_rows: int = 1
     banks. Returns ``(alerts, meta)``; meta reports precision of the trigger labels before and after.
     """
     labels = bank_labels or {}
-    p, X = score(df, model)
+    p, X = score(df, model, cap=cap)
     coef = np.asarray(model["coef"], dtype=np.float64)
     names = list(model.get("feature_names"))
     y = df["is_laundering"].fillna(0).astype(int).to_numpy()
@@ -218,16 +225,30 @@ def build_alerts(df: pd.DataFrame, model: dict, top: int = 20, max_rows: int = 1
         "source": None,
         "model_sha256": model.get("sha256"), "model_round": model.get("round"),
         "n_scored": int(len(df)), "prevalence": round(float(y.mean()), 6) if len(y) else None,
-        "filter": {"exclude_same_account": exclude_self, "min_banks": min_banks},
+        "filter": {"exclude_same_account": exclude_self, "min_banks": min_banks,
+                   "log_amt_cap": "fedaml.features.cap_for_alerts (log1p(1e7))" if cap else None},
         "unfiltered": {**prec([int(q) for q in raw]), "same_account_in_top": int(self_mask[raw].sum())},
         "filtered": {f"at_{len(kept[:k])}": prec([q for q, *_ in kept[:k]]) for k in (top,) + tuple(extra_k)},
         "removed_while_ranking": {"same_account": skipped_self, "fewer_than_min_banks": skipped_banks},
         "same_account_rows_in_sample": int(self_mask.sum()),
         "same_account_laundering_in_sample": int(y[self_mask].sum()),
         "demo_alert_id": demo["alert_id"] if demo else None,
-        "demo_alert_rule": "highest-ranked alert after the filter whose trigger is labelled laundering",
+        "demo_alert_rule": "highest-ranked alert in the review queue whose trigger is labelled laundering "
+                           "in the synthetic data",
+        "wording": "alerts are ranked for analyst review; they are not detected laundering",
     }
     return alerts, meta
+
+
+def ablation(df: pd.DataFrame, model: dict, ks: tuple[int, ...] = (20, 50, 100)) -> dict:
+    """Labelled-laundering triggers at each k for raw ranking, filters only, and cap + filters."""
+    out = {}
+    for name, kw in (("raw", dict(exclude_self=False, min_banks=1, cap=False)),
+                     ("filters_only", dict(exclude_self=True, min_banks=2, cap=False)),
+                     ("cap_plus_filters", dict(exclude_self=True, min_banks=2, cap=True))):
+        _, m = build_alerts(df, model, top=ks[0], max_rows=1, extra_k=ks[1:], **kw)
+        out[name] = {k: v["true_laundering"] for k, v in m["filtered"].items()}
+    return out
 
 
 def write_json_atomic(path: str, obj) -> None:
@@ -251,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--bank-map", default=None, help="data/bank_map.json (default: next to --test)")
     ap.add_argument("--min-banks", type=int, default=2, help="drop chains touching fewer banks (default 2)")
     ap.add_argument("--keep-same-account", action="store_true", help="do not drop from_acct == to_acct rows")
+    ap.add_argument("--no-cap", action="store_true", help="rank on raw log_amt (no cap_for_alerts)")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -265,8 +287,14 @@ def main(argv: list[str] | None = None) -> int:
     log.info("loaded %s: %d rows, laundering rate %.5f", ",".join(paths), len(df), df["is_laundering"].mean())
     model = load_model(args.model)
     alerts, meta = build_alerts(df, model, args.top, args.max_rows, labels,
-                                exclude_self=not args.keep_same_account, min_banks=args.min_banks)
+                                exclude_self=not args.keep_same_account, min_banks=args.min_banks,
+                                cap=not args.no_cap)
     meta["source"] = paths
+    meta["ablation_true_laundering_at_k"] = ablation(df, model)
+    meta["ablation_note"] = ("The log_amt cap is a post-hoc ranking rule chosen after we saw score saturation "
+                             "on nominally huge non-USD amounts, and it is evaluated on the same data. "
+                             "Model AUC/AP are unchanged (reported on raw features).")
+    log.info("ablation (labelled laundering at k): %s", meta["ablation_true_laundering_at_k"])
     write_json_atomic(args.out, {"meta": meta, "alerts": alerts})
     u, f = meta["unfiltered"], meta["filtered"][f"at_{len(alerts)}"] if alerts else {}
     log.info("unfiltered top-%d: %d/%d labelled laundering, %d same-account", u["k"], u["true_laundering"], u["k"],

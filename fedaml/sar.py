@@ -122,8 +122,8 @@ def render(alert: dict, facts: dict[str, str], sections: dict[str, str], footer:
     for r in alert["rows"]:
         chain.append(f"| {r.get('ts')} | {r['from_bank']} | {r['from_acct']} | {r['to_bank']} | {r['to_acct']} | "
                      f"{(r.get('amt_paid') or 0):,.2f} | {r.get('cur_paid')} | {r.get('fmt')} | {r.get('role', '')} |")
-    label = ("labelled laundering (true positive)" if int(alert["trigger"].get("is_laundering") or 0) == 1
-             else "not labelled laundering")
+    label = ("trigger labelled laundering in the synthetic data" if int(alert["trigger"].get("is_laundering") or 0) == 1
+             else "trigger not labelled laundering in the synthetic data")
     gen_note = (f"LLM engine ({os.path.basename(str(footer['model']))}), {footer['seconds']} s, "
                 f"{footer['completion_tokens']} tokens"
                 if footer["engine"] == "llm" else
@@ -131,7 +131,7 @@ def render(alert: dict, facts: dict[str, str], sections: dict[str, str], footer:
     return f"""# Suspicious Activity Report — alert {facts['ALERT_ID']}
 
 ## Subject
-Account **{facts['SENDER']}** (bank {facts['SENDER_BANK']}) → account **{facts['RECEIVER']}** (bank {facts['RECEIVER_BANK']}), {facts['AMT']} {facts['CUR']} by {facts['FMT']} on {facts['TS']}. Federated model score {facts['SCORE']} (rank {facts['RANK']}).
+Account **{facts['SENDER']}** (bank {facts['SENDER_BANK']}) → account **{facts['RECEIVER']}** (bank {facts['RECEIVER_BANK']}), {facts['AMT']} {facts['CUR']} by {facts['FMT']} on {facts['TS']}. Federated model score {facts['SCORE']}, rank {facts['RANK']} in the queue ranked for analyst review.
 
 ## Summary of activity
 {sections['summary']}
@@ -152,13 +152,13 @@ Chain reviewed ({facts['N_ROWS']} rows, regulator-side held-out sample; syntheti
 ## Model attribution
 - Global model sha256: `{facts['MODEL_SHA']}` (round {facts['MODEL_ROUND']}), trained by federated averaging; no raw transaction left any bank.
 - Score for the trigger transaction: {facts['SCORE']}, rank {facts['RANK']} in the filtered review queue.
-- Ground truth for the trigger (synthetic dataset label, not known to any bank or to the model): **{label}**.
+- Ground truth (not known to any bank or to the model): **{label}**.
 - Top feature contributions (value × weight):
 
 {attribution_table(alert)}
 
 ---
-*Generated {footer['generated_at']} by `fedaml.sar` using the {gen_note}. The LLM narrates, the model decides: every fact, account id, amount, bank id and the model hash above were inserted by code from `state/alerts.json`; the language model wrote only the paragraph marked "Analyst assessment (LLM)" and never saw an account id or amount. Account ids were checked against the alert record. Data are synthetic (IBM AML HI-Small); no real persons are described.*
+*Generated {footer['generated_at']} by `fedaml.sar` using the {gen_note}. Ground truth: {label}. This alert was ranked for analyst review; it is not a finding of laundering. The LLM narrates, the model decides: every fact, account id, amount, bank id and the model hash above were inserted by code from `state/alerts.json`; the language model wrote only the paragraph marked "Analyst assessment (LLM)" and never saw an account id or amount. Account ids were checked against the alert record. Data are synthetic (IBM AML HI-Small); no real persons are described.*
 """
 
 

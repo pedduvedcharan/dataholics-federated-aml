@@ -135,7 +135,7 @@ def template_sections(alert: dict, facts: dict[str, str]) -> dict[str, str]:
         "at bank [RECEIVER_BANK] on [TS]. In the regulator's held-out sample the sender [SENDER_ACTIVITY] "
         "and the receiver [RECEIVER_ACTIVITY]. The chain of [N_ROWS] transactions reviewed "
         "here totals [TOTAL_AMT] and touches [N_BANKS] institution(s) (bank ids [BANKS]). The federated "
-        "model scored the trigger transaction [SCORE] (rank [RANK] of the sample)."
+        "model scored the trigger transaction [SCORE], rank [RANK] in the queue ranked for analyst review."
     )
     bullets = []
     for f in alert.get("top_features", []):
