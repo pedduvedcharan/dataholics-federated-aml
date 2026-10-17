@@ -215,6 +215,23 @@ def load_global_test(nrows: int | None = None,
     return featurize(df), labels(df)
 
 
+# Alert-ranking cap for log_amt: a fixed domain constant ($10M), NOT a statistic of
+# any bank's data. featurize() itself is unchanged (the model was trained on raw log_amt);
+# only the alert queue clips, because a linear model extrapolates on $1B+ FX transfers.
+LOG_AMT_ALERT_CAP = float(np.log1p(1e7))
+
+
+def cap_for_alerts(X: np.ndarray) -> np.ndarray:
+    """Copy of ``X`` with ``log_amt`` clipped at ``LOG_AMT_ALERT_CAP`` (alert ranking only).
+
+    Not for model evaluation: the federated model's AUC/AP are reported on raw features.
+    """
+    Xc = np.array(X, dtype=np.float64, copy=True)
+    j = FEATURE_NAMES.index("log_amt")
+    Xc[:, j] = np.minimum(Xc[:, j], LOG_AMT_ALERT_CAP)
+    return Xc
+
+
 def contributions(X: np.ndarray, coef: np.ndarray) -> np.ndarray:
     """Per-feature logit contributions ``X * coef`` for a logistic model.
 
