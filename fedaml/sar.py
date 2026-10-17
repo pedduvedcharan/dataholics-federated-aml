@@ -25,6 +25,8 @@ from fedaml.llm.narrate import SYSTEM_PROMPT, build_user_prompt, echoes_input, p
 
 log = logging.getLogger("fedaml.sar")
 
+INSTRUCTION_ECHO = re.compile(r"under \d+ words|in your own words|\(\d+ sentences|one sentence per|"
+                              r"next steps for the officer|return json", re.I)
 ACCOUNT_LIKE = re.compile(r"\b(?=[0-9A-Fa-f]*[A-Fa-f])[0-9A-Fa-f]{6,}\b|\b\d{7,}\b")
 
 
@@ -77,7 +79,10 @@ def llm_sections(alert: dict, facts: dict[str, str], *, max_tokens: int, tempera
         sections["pattern_indicators"] = tmpl["pattern_indicators"]
         meta["indicators_source"] = "template (LLM echoed the input lines)"
     for key, min_words in (("summary", 25), ("recommended_action", 15)):
-        if len(sections[key].split()) < min_words:  # one-liners are not a SAR narrative
+        if INSTRUCTION_ECHO.search(sections[key]):  # the model copied the prompt's instructions
+            sections[key] = tmpl[key]
+            meta[f"{key}_source"] = "template (LLM echoed the prompt instructions)"
+        elif len(sections[key].split()) < min_words:  # one-liners are not a SAR narrative
             sections[key] = tmpl[key]
             meta[f"{key}_source"] = f"template (LLM wrote under {min_words} words)"
     filled = {k: fill_placeholders(v, facts) for k, v in sections.items()}
