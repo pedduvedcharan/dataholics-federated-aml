@@ -86,25 +86,30 @@ table with every row's file of origin is [`docs/RESULTS_TABLE.md`](docs/RESULTS_
 |---|---|---|
 | Best single-bank model, pooled test over banks 2–4 (AUC / AP) | 0.986 (bank 4 logreg) / 0.405 (bank 4 HGB) | `state/baselines.json` |
 | Centralized pooling logistic regression, all four banks' raw rows (AUC / AP) | 0.983 / 0.088 | `state/baselines.json` |
-| Federated global model, DP off, pooled test over banks 2–4 (AUC / AP) | 0.988 / 0.152 | `state/status_dpoff.json`, `state/baselines.json` |
-| Federated global model, DP on (σ 0.3, bank-side noise), pooled test over banks 2–4 (AUC / AP) | 0.970 / 0.056 | `state/status_dpon.json`, `state/baselines.json` |
+| Federated global model, DP off, pooled test over banks 2–4 (AUC / AP) | 0.992 / 0.248 | `state/status_dpoff.json`, `state/baselines.json` |
+| Federated global model, DP on (σ 0.5, bank-side noise), pooled test over banks 2–4 (AUC / AP) | 0.982 / 0.065 | `state/status_dpon.json`, `state/baselines.json` |
 | Bank 1 (code 070), any model, own test set | ≈ 0.5 (not learnable with per-row features, see §6) | `state/baselines.json` |
 | Transaction rows shared by all banks, all rounds | 0 | `logs/egress/bank_*.jsonl` |
 | Model parameters shared per update | 21 (about 750 bytes) | `logs/egress/bank_*.jsonl` |
 | Rogue bank (scaled poisoning), defense off → final pooled AUC / AP | 0.953 / 0.071 (clipping + sample cap alone) | `state/status_rogue_off.json` |
 | Rogue bank, defense on (DP off): rounds excluded / honest banks excluded / final AUC / AP | 10 of 10 / none / 0.992 / 0.250 | `state/status_rogue_on.json` |
-| Membership auditing game, DP off: attack accuracy / attack AUC | 0.860 / 0.937 [0.91, 0.97] | `state/redteam.json` |
-| Membership auditing game, DP on σ 0.3: attack accuracy / attack AUC | 0.518 / 0.525 [0.51, 0.54] | `state/redteam.json` |
-| Formal ε (approximate, update-level, 10 rounds, σ 0.3) | ≈ 100 (loose; the measured attack above is the evidence) | `state/status_dpon.json`, `state/redteam.json` |
+| Membership auditing game (bank 3), DP off: attack AUC | 0.994 [0.99, 1.00] | `state/redteam.json` |
+| Membership auditing game (bank 3), σ 0.3 / σ 0.5 / σ 0.8: attack AUC | 0.551 (weak leak) / 0.517 (near chance, the demo setting) / 0.497 | `state/redteam.json` |
+| Formal ε (approximate, update-level, 10 rounds, σ 0.5) | ≈ 46 (loose; the measured attack above is the evidence) | `state/status_dpon.json`, `state/redteam.json` |
 | LLM generation speed on s390x | 27.3 tok/s mean (100 tokens, 3 threads) | `state/llm_runtime.json` |
 | Peak RAM, all containers / seconds per round / total runtime | {{PEAK_RSS_MB}} MB / {{SEC_PER_ROUND}} s / {{TOTAL_RUNTIME}} | `state/footprint.json` |
 
-How to read it: **without DP** the federated model matches the best single bank on AUC (0.988 vs 0.986, a tie)
-and beats centralized pooling on average precision (0.152 vs 0.088: more true laundering per alert), while banks whose
-own detectors are weak (bank 3's best tree reaches 0.78 pooled) receive the strong model without sharing a row.
-**With DP** at σ 0.3 the same model lands at 0.970 AUC and 0.056 AP: about 0.02 AUC and 0.10 AP is the measured price of
-the privacy guarantee the red-team table demonstrates, and we state it rather than hide it. The formal ε ≈ 100 is a
-weak guarantee; the measured attack carries the privacy claim. The rogue defense is layered: clipping and the sample-count cap alone keep a single poisoning bank from reversing the
+How to read it: **without DP** the federated model ties the best single bank on AUC (0.992 vs 0.986) and beats
+centralized pooling on both metrics (0.248 vs 0.088 AP: more true laundering per alert), while trailing the strongest
+single-bank tree model on AP (bank 4 HGB, 0.405). Banks whose own detectors are weak (bank 3's best tree reaches 0.78
+pooled) receive the strong model without sharing a row. **With DP** at σ 0.5 the same model lands at 0.982 AUC and
+0.065 AP, just below centralized pooling: about 0.01 AUC and 0.18 AP is the measured price of the privacy guarantee the
+red-team table demonstrates, and we state it rather than hide it. We chose σ by attacking ourselves: σ 0.3 still leaked
+a little (attack AUC 0.551), σ 0.5 does not (0.517). The formal ε ≈ 46 is a weak guarantee; the measured attack carries
+the privacy claim. Tree models still beat any logistic model on average precision inside one bank; the federated model
+is logistic by design.
+
+The rogue defense is layered: clipping and the sample-count cap alone keep a single poisoning bank from reversing the
 model (AUC 0.953) but it still wrecks precision (AP 0.071); the cosine screen removes it entirely (0.992 / 0.250, bank 5
 excluded 10 of 10 rounds, no honest bank excluded). With the weaker-regularised trainer (μ 0.5) the same attack drove
 the model to chance (0.500); those runs are archived on the VM as evidence of what the layers prevent. Tree models still beat
