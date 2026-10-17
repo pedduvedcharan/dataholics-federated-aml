@@ -95,7 +95,7 @@ How to read it: the federated model **matches the best single bank on AUC** (0.9
 centralized pooling on average precision** (0.143 vs 0.088: more true laundering per alert), while banks whose own
 detectors are weak (bank 3's best tree reaches 0.78 pooled) receive the strong model without sharing a row. Tree
 models still beat any logistic model on average precision inside one bank; the federated model is logistic by design.
-The DP-on model pays a measured 0.018 AUC for collapsing the membership attack to chance.
+The DP-on model pays a measured 0.018 AUC for bringing the membership attack to near chance (0.525, 90 % CI 0.51–0.54 at σ 0.3; 0.50 and 0.49 at σ 0.5 and 0.8).
 
 Two honest findings. **Privacy noise blinds the poisoning screen:** with bank-side noise the cosine defense caught the
 rogue in 1 of 6 rounds, so the rogue-defense numbers above are measured with DP off, and resolving this needs secure
