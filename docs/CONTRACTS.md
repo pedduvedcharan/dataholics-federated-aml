@@ -18,7 +18,7 @@ fedaml/                 Python package
 scripts/                INFRA    — setup_vm.sh, partition_data.py, footprint.sh
 data/raw/HI-Small_Trans.csv            (gitignored)
 data/banks/bank_<id>/train.csv, test.csv
-data/global_test.csv                   held-out across all banks (coordinator/regulator only)
+data/global_test.csv                   held-out across all banks (red-team control + alert chains only; NOT model evaluation since Oct 17 13:05)
 state/                  machine-readable outputs (gitignored except examples/)
 logs/egress/bank_<id>.jsonl
 docker-compose.yml, Dockerfile, README.md, STATUS.md
@@ -49,7 +49,8 @@ snd_amt_mean_log   log1p(mean amt_paid of from_acct, within bank)
 No StandardScaler. All features are already bounded or log-scaled so one global logistic model is meaningful.
 
 ## 4. Model and update format (FEDERATION owns; REDTEAM, AUDIT, GENAI read)
-- Global model = logistic regression: `coef` (len = n_features), `intercept` (1). Local training = `sklearn.linear_model.SGDClassifier(loss="log_loss", warm_start=True)` initialised from the global weights, `E` epochs of `partial_fit`, `class_weight="balanced"`.
+- Global model = logistic regression: `coef` (len = n_features), `intercept` (1). Local training (FEDERATION's choice via `--trainer`, default `lbfgs`): either `SGDClassifier(loss="log_loss", warm_start=True)` initialised from the global weights with `E` epochs of `partial_fit`, or `LogisticRegression(warm_start=True)` initialised from the global weights with a bounded iteration budget. **Class weights (changed Oct 17 13:05):** `compute_class_weight("balanced", classes=[0,1], y=y_train)` passed as a dict; `partial_fit` rejects the string `"balanced"` (example: `fedaml.redteam.sgd_logreg`).
+- **Evaluation of the global model (changed Oct 17 13:05, MASTER decision):** the coordinator scores each expected bank's own `data/banks/bank_<id>/test.csv`, featurized *within that bank* (`features.load_bank(id, "test")`), then **pools the predictions across banks** and computes ROC AUC and average precision on the pooled set → `global_auc`, `global_ap`. `per_bank_auc[id]` = the same global model's AUC on bank `id`'s own test rows. Reason: the within-bank account aggregates (`snd_txn_cnt_log` etc.) are systematically smaller in the mixed 200k `global_test.csv` than in a bank's own file (≈0.1 AUC shift on synthetic data, found by REDTEAM). Evaluator (MODELS, already in `fedaml/baselines.py`): `tests = load_bank_tests(bank_ids, data_dir)` once at startup, then each round `evaluate_model_pooled(path, tests=tests) -> {"auc","ap","n","per_bank":{id:{"auc","ap"}}}`; the coordinator maps `per_bank[id]["auc"]` into `per_bank_auc`. `data/global_test.csv` is **not** used for model evaluation any more; it stays for the red team's distribution-shift control (`--nonmembers global_test`) and for GENAI's alert-chain building (regulator-side view).
 - **Update** = local weights − global weights (delta), L2-clipped to `clip_norm`, Gaussian noise added when DP on.
 - Message a bank POSTs (JSON) — this exact schema, nothing else:
 ```json
@@ -71,9 +72,9 @@ Banks send **only** via `egress.send(coordinator_url, payload: dict, bank_id, ro
 3. POSTs and returns the response.
 
 ## 6. Status files (dashboard reads these; writers keep them valid JSON at all times, write to tmp then rename)
-- `state/status.json` (coordinator): `{"round", "total_rounds", "dp": {"enabled","sigma","clip_norm","epsilon_spent","delta"}, "rounds": [{"round","accepted":[ids],"excluded":[{"bank_id","reason","score"}],"global_auc","global_ap","per_bank_auc":{id:auc}}], "banks_expected":[1,2,3,4,5]}`
+- `state/status.json` (coordinator): `{"round", "total_rounds", "dp": {"enabled","sigma","clip_norm","epsilon_spent","delta"}, "rounds": [{"round","accepted":[ids],"excluded":[{"bank_id","reason","score"}],"global_auc","global_ap","per_bank_auc":{id:auc}}], "banks_expected":[1,2,3,4,5]}` — `global_auc`/`global_ap` are the **pooled per-bank-test** scores (§4, changed Oct 17 13:05); `per_bank_auc[id]` is the global model on bank `id`'s own test.csv.
 - `state/redteam.json` (redteam): `{"attack":"loss_threshold|shadow", "dp_off": {"attack_acc","attack_auc","n"}, "dp_on": {...}, "model_auc_off", "model_auc_on"}`
-- `state/baselines.json` (models): `{"per_bank": {id: {"logreg":{"auc","ap"},"rf":{...},"hgb":{...}}}, "federated": {"auc","ap"}, "centralized_logreg": {"auc","ap"}}`
+- `state/baselines.json` (models): `{"per_bank": {id: {"logreg":{"auc","ap"},"rf":{...},"hgb":{...}}}, "federated": {"auc","ap"}, "centralized_logreg": {"auc","ap"}}` — since Oct 17 13:05 `federated` and `centralized_logreg` are scored on the pooled per-bank test sets (§4); per-bank model entries keep `auc, ap` on the bank's own test and may add `pooled_auc, pooled_ap` on the pooled set (the number the "federated beats every single bank" claim compares against).
 - `state/footprint.json` (infra): `{"per_container_peak_rss_mb": {...}, "seconds_per_round", "total_runtime_s", "cpu_count":3, "arch":"s390x"}`
 - `state/sar/<alert_id>.md` (genai) + `state/alerts.json` (genai builds from global model scores on `global_test.csv`): top-20 flagged chains.
 

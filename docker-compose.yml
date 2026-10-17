@@ -1,7 +1,7 @@
 # Dataholics — cross-bank AML via federated learning — IBM Z Datathon 2026
 # One image ("fedaml", built from ./Dockerfile by INFRA), one service per role.
 # Default profile:  docker compose up            -> coordinator, bank1..bank4, rogue, dashboard
-# Tools profile:    docker compose run --rm attacker | genai | baselines | tryleak
+# Tools profile:    docker compose run --rm attacker | genai | alerts | baselines | tryleak   (llm starts with genai)
 # Toggles (env, all optional):  ROUNDS DP SIGMA CLIP DEFENSE EPOCHS ROGUE_ATTACK ROGUE_FACTOR SEED
 #   e.g.  DP=off DEFENSE=off docker compose up           (the "unprotected" run)
 #         DP=on  DEFENSE=on  docker compose up           (the demo run; defaults)
@@ -121,34 +121,48 @@ services:
       --seed ${SEED:-42}
     # REDTEAM 12:50: flags confirmed (--model-off --model-on --seed; also --attack auto|loss_threshold|shadow|art, --n 20000).
 
+  llm:
+    # GENAI (accepted by MASTER 13:10): llama.cpp built from source for s390x, serves a big-endian GGUF on :8080.
+    # One-off weights fetch (676 MB, stays out of the image):  docker compose run --rm llm /app/fetch_model.sh
+    # RAM ~0.7 GB + KV cache: do NOT run while the five banks train; start it for scene 6 only.
+    image: fedaml-llm
+    build:
+      context: .
+      dockerfile: fedaml/llm/Dockerfile
+    container_name: llm
+    profiles: ["tools"]
+    volumes:
+      - ./models:/models
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      LLM_THREADS: ${LLM_THREADS:-3}
+      LLM_CTX: ${LLM_CTX:-2048}
+    restart: "no"
+    init: true
+
   genai:
     <<: *common
     container_name: genai
     profiles: ["tools"]
     # SAR writer. Usage: ALERT_ID=A07 docker compose run --rm genai   (ids A01..A20 from state/alerts.json; SAR_ENGINE=llm|template)
+    # `--all` and `--list` also exist (fedaml.sar). Template fallback is automatic on LLM timeout (60 s) or hallucinated ids.
     # NOTE: no `${VAR:?}` guards anywhere: compose interpolates the whole file before applying profiles, so a guard breaks `docker compose up`.
-    command: python3 -m fedaml.sar --alert-id ${ALERT_ID:-A01} --engine ${SAR_ENGINE:-template}
-    # GENAI 12:50 scaffold (fedaml/llm): talks to a llama.cpp `llama-server` over HTTP; never imports torch.
-    # The server runs on the VM host (built from source, big-endian GGUF), so the container reaches it via host-gateway.
+    command: python3 -m fedaml.sar --alert-id ${ALERT_ID:-A01} --engine ${SAR_ENGINE:-llm}
+    depends_on:
+      llm:
+        condition: service_healthy
     environment:
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
       SEED: ${SEED:-42}
-      LLM_URL: ${LLM_URL:-http://host.docker.internal:8080}
-      LLM_MODEL_PATH: ${LLM_MODEL_PATH:-}
+      LLM_URL: ${LLM_URL:-http://llm:8080}
       LLM_THREADS: ${LLM_THREADS:-3}
+    # Fallback if the fedaml-llm image will not build on the VM: run llama-server on the host
+    # (~/llm/llama.cpp/build/bin/llama-server ... --host 0.0.0.0 --port 8080) and start genai with
+    #   LLM_URL=http://host.docker.internal:8080 docker compose run --rm --no-deps genai
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # TODO(GENAI): confirm llama-server runs on the host (not in this container) and its port; give MASTER model name,
-    #              RAM, and seconds per SAR. If weights must be inside the container, add ./models:/app/models:ro here.
-
-  baselines:
-    <<: *common
-    container_name: baselines
-    profiles: ["tools"]
-    # Per-bank LogReg / RF / HGB comparison + centralized ceiling -> state/baselines.json (MODELS)
-    command: python3 -m fedaml.baselines --banks ${BANKS_BASELINE:-1,2,3,4} --seed ${SEED:-42}
-    # MODELS 12:50: flags confirmed (--banks --seed --max-rows 500000 --n-jobs 2 --federated-model <json>).
 
   alerts:
     <<: *common
