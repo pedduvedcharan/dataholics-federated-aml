@@ -294,11 +294,11 @@ FOOTNOTES = {"all": "all rows, same-bank non-members",
 
 def format_table(rows: list[tuple[str, dict]], target: str) -> str:
     """The table from the brief; the setting column names the population each row used."""
-    lines = [f"{'setting':<28}{'model AUC':>10}{'attack acc':>12}{'attack AUC':>12}  {'90% CI':<14} verdict"]
+    lines = [f"{'setting':<40}{'model AUC':>10}{'attack acc':>12}{'attack AUC':>12}  {'90% CI':<14} verdict"]
     for name, r in rows:
         t = r["targets"][target]["result"]
         ci = f"[{t['attack_auc_ci90'][0]:.2f}, {t['attack_auc_ci90'][1]:.2f}]"
-        lines.append(f"{name + ' / ' + target + ' rows':<28}{r['model_auc']:>10.3f}"
+        lines.append(f"{name + ' / ' + target + ' rows':<40}{r['model_auc']:>10.3f}"
                      f"{t['attack_acc']:>12.3f}{t['attack_auc']:>12.3f}  {ci:<14} {t['verdict']}")
     for o in [o for o in rows[0][1]["targets"] if o != target]:
         parts = "; ".join(f"{name}: acc {r['targets'][o]['result']['attack_acc']:.3f}, AUC "
@@ -330,7 +330,7 @@ def build_report(off: dict, on: Optional[dict], data: AttackData, target: str, s
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Membership-inference red team: DP off vs DP on")
     ap.add_argument("--model-off", help="global model JSON trained with DP off")
-    ap.add_argument("--model-on", help="global model JSON trained with DP on")
+    ap.add_argument("--model-on", help="global model JSON(s) trained with DP on; comma-separated for a sigma sweep")
     ap.add_argument("--data-dir", default="data")
     ap.add_argument("--out", default="state/redteam.json")
     ap.add_argument("--member-banks", default="2,3,4",
@@ -367,12 +367,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.model_off:
         rows.append(("DP off", evaluate_model(load_model(args.model_off), data, args.seed, args.attack, args.shadow_epochs)))
     on = None
-    if args.model_on:
-        on = evaluate_model(load_model(args.model_on), data, args.seed, args.attack, args.shadow_epochs)
-        rows.append(("DP on", on))
+    ons = [p for p in (args.model_on or "").split(",") if p]
+    for path in ons:
+        res = evaluate_model(load_model(path), data, args.seed, args.attack, args.shadow_epochs)
+        label = "DP on" if len(ons) == 1 else f"DP on ({Path(path).stem.replace('global_final_', '')})"
+        rows.append((label, res))
+        on = on or res                      # §6 dp_on = the first DP-on model given
     seconds = time.time() - t0
-    off = rows[-1][1] if on is None else rows[-2][1]
-    write_json_atomic(args.out, build_report(off, on, data, target, args.seed, seconds))
+    off = rows[0][1] if not args.selftest else rows[1][1] if args.model_off else rows[0][1]
+    report = build_report(off, on, data, target, args.seed, seconds)
+    report["sweep"] = {name: {"model_auc": r["model_auc"], **{k: r["targets"][target]["result"][k] for k in
+                       ("attack_acc", "attack_auc", "attack_auc_ci90", "n", "verdict")}} for name, r in rows}
+    write_json_atomic(args.out, report)
     print(format_table(rows, target))
     print(f"\nattack: {off['targets'][target]['attack']} | members: banks {members} train | "
           f"non-members: {data.meta['nonmembers']} | n per class: {data.meta['n_per_class']} | seed {args.seed} | "
