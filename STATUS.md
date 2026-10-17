@@ -228,6 +228,17 @@ Partition runtime 17s, peak RSS 563 MB, seed 42.
 - Oct 17 12:00: idea locked (cross-bank AML, federated). Additions accepted: regulator view (#2), rogue bank (#4). Paillier and ML-DSA are stretch.
 
 ## Numbers for the slides (file of origin required)
+- **[16:05 FEDERATION] FINAL federation files on the VM (`~/fedaml/state/`, all from code bd87b9a rules, seed 42, 10 rounds; FEDERATION is now OFF the VM, port 8000 free):**
+
+  | file | pooled AUC r10 | AP r10 | bank 1 accepted | banks 2–4 accepted | rogue excluded |
+  |---|---|---|---|---|---|
+  | `status_dpoff.json` (promoted 21:02 UTC from `state_v4`, cumulative rule) | 0.988 | 0.143 | 9/10 | 10/10 | – |
+  | `status_dpon.json` = `status_dpon_s03.json` (local, sigma 0.3) | 0.970 | 0.056 | 10/10 | 10/10 | – |
+  | `status_rogue_off.json` (defense off) | 0.500 | 0.002 | 10/10 | 10/10 | 0/10 |
+  | `status_rogue_on.json` (defense on, DP off) | 0.989 | 0.182 | 10/10 | 10/10 | 10/10 |
+
+  **REDTEAM:** `global_final_dpoff.json` changed at 21:02 UTC (bank 1 now accepted in 9 rounds instead of 6; AUC unchanged 0.988). Re-run the attack on it if `redteam.json` predates that. Previous copy in `~/fedaml/archive/sweep3_pre_v4/`.
+- **[16:05 FEDERATION → MASTER, decision needed, nothing changed]: mu 0.1 is clearly better on real data** (side runs in `~/fedaml/state_v4/`): DP off (AUC 0.992, AP 0.248) vs mu 0.5 (0.988, 0.143); DP on sigma 0.3 (0.987, 0.093) vs mu 0.5 (0.970, 0.056). DP off 20 rounds at mu 0.5: (0.991, 0.262). Cost: with DP off, bank 1 accepted 7/10 instead of 9/10 (weaker pull = more divergence). With mu 0.1 the DP-on model beats centralized logreg (0.983, 0.088) on both AUC and AP and ties the best single bank on AUC; AP still below bank 4 alone (0.345). Switching = `MU=0.1` for every bank (env, or compose `--mu 0.1`), regenerate dpoff/dpon/rogue_off/rogue_on (~3 min) and REDTEAM re-attacks. FEDERATION recommends switching only if the integration run is green and REDTEAM has 10 minutes; otherwise ship mu 0.5 and put mu 0.1 in the README as "measured, not the demo setting".
 - **[16:15 FEDERATION] REAL shards on the LinuxONE VM**, host processes (not compose), seed 42, 10 rounds, prox trainer (mu 0.5, 50 L-BFGS iterations), clip 1.0, weight cap 2x median. Pooled AUC/AP over banks 2,3,4 test sets. Files: `~/fedaml/state/status_<tag>.json` + `global_final_<tag>.json`; table also in `~/fedaml/logs/fed_final_table.md`. A whole 10-round run takes **37–44 s** (coordinator log; 4–5 banks on 3 cores).
   - **Privacy vs utility, banks 1–4, no rogue, DP local (each bank clips + noises before egress).** epsilon is approximate, update-level (one bank's update per round), delta 1e-5, analytic Gaussian mechanism composed over 10 rounds (`fedaml/dp.py`).
 
