@@ -5,11 +5,15 @@ prints the table below and writes `state/redteam.json`. Everything is seeded (`-
 runs in well under two minutes on the 3-core LinuxONE VM (synthetic dry run: 2.5 s).
 
 ```
-setting   model AUC  attack acc  attack AUC   verdict      (target: laundering rows)
-DP off      {{RT_MODEL_AUC_OFF}}   {{RT_ACC_OFF}}   {{RT_AUC_OFF}}   {{RT_VERDICT_OFF}}
-DP on       {{RT_MODEL_AUC_ON}}    {{RT_ACC_ON}}    {{RT_AUC_ON}}    {{RT_VERDICT_ON}}
+setting                      model AUC  attack acc  attack AUC   verdict
+DP off / laundering rows     {{RT_MODEL_AUC_OFF}}   {{RT_ACC_OFF}}   {{RT_AUC_OFF}}   {{RT_VERDICT_OFF}}
+DP on  / laundering rows     {{RT_MODEL_AUC_ON}}    {{RT_ACC_ON}}    {{RT_AUC_ON}}    {{RT_VERDICT_ON}}
+  footnote, all rows, same-bank non-members:            DP off: {{RT_ALL_OFF}};  DP on: {{RT_ALL_ON}}
+  footnote, laundering rows, mixed-bank hold-out:       DP off: {{RT_SHIFT_OFF}}; DP on: {{RT_SHIFT_ON}}
 ```
 Numbers are filled from `state/redteam.json` produced on the VM; nothing here is estimated.
+Model AUC is measured on bank 1's own `test.csv` (the coordinator evaluates on per-bank test files too);
+the AUC on `global_test.csv` is kept in `redteam.json` under `model_auc_global_test_*`.
 
 ## Threat model
 
@@ -54,11 +58,13 @@ least realistic of the three. The CLI prefers ART, then shadow, then loss-thresh
 baseline is always computed and stored alongside under `detail`.
 
 **Who is a member, who is not.** Members are a seeded sample of bank 1's `train.csv`.
-Non-members are rows the model never saw: by default rows of `data/global_test.csv` dated after
-bank 1's training window (the regulator's hold-out), or with `--nonmembers bank_test` bank 1's
-own later `test.csv`, featurised together with `train.csv` so the within-bank account aggregates
-are consistent. Members and non-members are sampled in **exactly equal numbers**, so 0.5 is the
-true chance level.
+Non-members are rows the model never saw. The primary source is bank 1's own later `test.csv`:
+same bank, same customers' habits, later time, featurised together with `train.csv` so the
+within-bank account aggregates are consistent. That keeps the comparison about *memorisation*
+rather than about which bank a row came from. The footnote repeats the laundering-row attack with
+non-members from `data/global_test.csv` (the mixed-bank hold-out, rows dated after bank 1's
+training window) to show how much apparent "leak" distribution shift alone creates. Members and
+non-members are sampled in **exactly equal numbers**, so 0.5 is the true chance level.
 
 **Two target populations.** The attack is run on *all rows* (20 000 vs 20 000) and on
 *laundering rows only* (every laundering row of bank 1's training set against an equal number of
@@ -87,10 +93,11 @@ even without DP, which `redteam.json` also records.
   probability. We do not run gradient-based attacks on the per-round updates the coordinator sees,
   attribute inference, or model inversion.
 - **Distribution shift is a confound.** Bank 1's rows differ from the mixed-bank hold-out even
-  without any memorisation, and a loss threshold can pick that up. That is why the same-bank
-  control (`--nonmembers bank_test`) exists; on our synthetic dry run the hold-out showed an
-  apparent leak that the same-bank control did not, so the headline table states which non-member
-  set it used and the docs report both.
+  without any memorisation, and a loss threshold can pick that up. On our synthetic dry run the
+  hold-out produced an apparent leak (AUC ≈ 0.65) that the same-bank control did not (AUC ≈ 0.50),
+  and the number did not move with more training epochs, which is the signature of shift rather
+  than memorisation. The headline therefore uses same-bank non-members and the hold-out appears
+  only as the footnote.
 - **Small positive class.** Each of the four busiest banks has only a few hundred to a few thousand
   laundering rows, so the laundering-row attack is evaluated on hundreds of rows per class. The
   standard error of an AUC at that size is roughly ±0.02–0.03; `redteam.json` records `n`.
@@ -108,8 +115,8 @@ even without DP, which `redteam.json` also records.
 . ~/fedaml/.venv/bin/activate && cd ~/fedaml
 python -m fedaml.redteam --selftest                                   # no federated model needed
 python -m fedaml.redteam --model-off state/global_final_dpoff.json --model-on state/global_final_dpon.json
-python -m fedaml.redteam ... --nonmembers bank_test                   # same-bank control
 python -m fedaml.redteam ... --attack loss_threshold                  # baseline only
 ```
 Outputs: `state/redteam.json` (CONTRACTS §6 keys plus `target`, `verdict`, `n_per_class`,
-`seed`, `runtime_s`, `detail` with every variant and both populations).
+`seed`, `runtime_s`, `model_auc_global_test_*`, and `detail` with every attack variant and all
+three populations: `laundering`, `all`, `laundering@global_test`).

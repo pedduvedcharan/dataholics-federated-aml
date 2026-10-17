@@ -3,9 +3,11 @@
 Builds exactly balanced member / non-member samples for two target
 populations, plus shadow material from a second bank:
 
-* ``all``        - any row of bank 1's training set vs any unseen row
 * ``laundering`` - laundering rows of bank 1's training set vs unseen
                    laundering rows (the customers a leak actually hurts)
+* ``all``        - any row of bank 1's training set vs any unseen row
+* ``laundering@global_test`` - footnote: non-members from the mixed-bank
+                   hold-out instead, to expose distribution shift
 
 Whole files are featurised before sampling so the within-bank account
 aggregates (snd_txn_cnt_log, ...) match what the bank computed in training.
@@ -40,9 +42,11 @@ class Population:
 class AttackData:
     feature_names: list[str]
     pops: dict[str, Population]            # "all", "laundering"
-    X_test: np.ndarray                      # full global_test, for model AUC
+    X_test: np.ndarray                      # member bank's test.csv, for model AUC
     y_test: np.ndarray
     shadow: Optional[dict] = None           # {"X_full","y_full", "pops": {...}} from the shadow bank
+    X_global: Optional[np.ndarray] = None   # global_test.csv when present (secondary AUC)
+    y_global: Optional[np.ndarray] = None
     meta: dict = field(default_factory=dict)
 
 
@@ -100,40 +104,46 @@ def _populations(X_m, y_m, X_p, y_p, pool_mask: np.ndarray, n: int, rng) -> dict
 
 
 def load_attack_data(data_dir: str, member_bank: int, n: int, seed: int,
-                     nonmember_source: str = "global_test",
                      shadow_bank: Optional[int] = 2) -> AttackData:
     """Assemble attack data.
 
-    Members come from ``banks/bank_<member_bank>/train.csv``.  Non-members are
-    rows the model never trained on, either from ``global_test.csv`` dated after
-    the member bank's training window (default, the regulator's hold-out) or
-    from the member bank's own ``test.csv`` (``bank_test``: same bank, later
-    time, featurised together with train so aggregates are consistent; the
-    cleaner control for distribution shift).
+    Members come from ``banks/bank_<member_bank>/train.csv``.  Primary
+    non-members are the same bank's later ``test.csv`` rows (same customers'
+    bank, later time, featurised together with train so account aggregates are
+    consistent).  When ``global_test.csv`` exists, a second laundering-row
+    population with non-members from the mixed-bank hold-out dated after the
+    training window is built as the distribution-shift footnote
+    (``"laundering@global_test"``).  Model AUC is measured on the bank's test
+    file (MASTER decision Oct 17) and, when present, on global_test too.
     """
     d = Path(data_dir)
     rng = np.random.default_rng(seed)
-    train = _read(d / "banks" / f"bank_{member_bank}" / "train.csv")
-    gtest = _read(d / "global_test.csv")
-    X_g, names = featurize(gtest)
-    y_g = _labels(gtest)
-
-    if nonmember_source == "bank_test":
-        btest = _read(d / "banks" / f"bank_{member_bank}" / "test.csv")
-        X_both, _ = featurize(pd.concat([train, btest], ignore_index=True))
-        X_tr, X_pool = X_both[: len(train)], X_both[len(train):]
-        y_tr, y_pool = _labels(train), _labels(btest)
-        pool_mask = np.ones(len(btest), dtype=bool)
-    else:
-        X_tr, _ = featurize(train)
-        y_tr, X_pool, y_pool = _labels(train), X_g, y_g
-        pool_mask = _after_window(gtest, train)
-
-    pops = _populations(X_tr, y_tr, X_pool, y_pool, pool_mask, n, rng)
-    meta = {"member_bank": member_bank, "nonmember_source": nonmember_source,
+    bdir = d / "banks" / f"bank_{member_bank}"
+    train, btest = _read(bdir / "train.csv"), _read(bdir / "test.csv")
+    X_both, names = featurize(pd.concat([train, btest], ignore_index=True))
+    X_tr, X_bt = X_both[: len(train)], X_both[len(train):]
+    y_tr, y_bt = _labels(train), _labels(btest)
+    pops = _populations(X_tr, y_tr, X_bt, y_bt, np.ones(len(btest), dtype=bool), n, rng)
+    meta = {"member_bank": member_bank, "nonmembers": f"bank_{member_bank} test.csv (same bank, later time)",
             "train_rows": int(len(train)), "train_laundering_rows": int((y_tr == 1).sum()),
-            "global_test_rows": int(len(gtest)), "n_per_class": {k: p.n for k, p in pops.items()}}
-    data = AttackData(names, pops, X_g, y_g, meta=meta)
+            "test_rows": int(len(btest))}
+    data = AttackData(names, pops, X_bt, y_bt, meta=meta)
+
+    gpath = d / "global_test.csv"
+    if gpath.exists():
+        gtest = _read(gpath)
+        X_g, _ = featurize(gtest)
+        y_g = _labels(gtest)
+        X_tr_alone, _ = featurize(train)      # members as the bank featurised them for training
+        mask = _after_window(gtest, train)
+        pos_m, pos_p = np.flatnonzero(y_tr == 1), np.flatnonzero((y_g == 1) & mask)
+        if len(pos_m) >= 20 and len(pos_p) >= 20:
+            pops["laundering@global_test"] = _balanced(X_tr_alone, y_tr, X_g, y_g, pos_m, pos_p, n, rng)
+        data.X_global, data.y_global = X_g, y_g
+        meta["global_test_rows"] = int(len(gtest))
+    else:
+        log.warning("%s not found; no distribution-shift footnote, no global AUC", gpath)
+    meta["n_per_class"] = {k: p.n for k, p in pops.items()}
 
     if shadow_bank is not None:
         sdir = d / "banks" / f"bank_{shadow_bank}"

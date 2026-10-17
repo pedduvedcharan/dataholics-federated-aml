@@ -145,6 +145,7 @@ def shadow_attack(loss_mem: np.ndarray, loss_non: np.ndarray, target: str, data:
     attack classifier loss -> P(member), then apply it to the target model's
     losses. No target membership labels are used anywhere.
     """
+    target = target.split("@")[0]          # footnote populations reuse the shadow bank's own pops
     if not data.shadow or target not in data.shadow["pops"]:
         raise RuntimeError("shadow data unavailable")
     shadow = sgd_logreg(data.shadow["y_full"], seed)
@@ -232,10 +233,14 @@ def attack_population(model: dict, data: AttackData, target: str, seed: int,
 
 def evaluate_model(model: dict, data: AttackData, seed: int, attack: str = "auto",
                    shadow_epochs: int = 5) -> dict:
-    """Model AUC on global_test plus the attack on every available population."""
-    p_test = predict_proba(model, data.X_test, data.feature_names)
-    model_auc = float(roc_auc_score(data.y_test, p_test)) if len(np.unique(data.y_test)) > 1 else float("nan")
-    return {"model_auc": model_auc, "model_sha256": model["sha256"], "model_path": model["path"],
+    """Model AUC on the member bank's test file (and global_test when present)
+    plus the attack on every available population."""
+    def auc(X, y):
+        if X is None or len(np.unique(y)) < 2:
+            return None
+        return float(roc_auc_score(y, predict_proba(model, X, data.feature_names)))
+    return {"model_auc": auc(data.X_test, data.y_test), "model_auc_global_test": auc(data.X_global, data.y_global),
+            "model_sha256": model["sha256"], "model_path": model["path"],
             "targets": {t: attack_population(model, data, t, seed, attack, shadow_epochs) for t in data.pops}}
 
 
@@ -264,17 +269,22 @@ def train_overfit_local(data: AttackData, epochs: int, seed: int, out: str) -> s
     return out
 
 
+FOOTNOTES = {"all": "all rows, same-bank non-members",
+             "laundering@global_test": "laundering rows, mixed-bank hold-out non-members (distribution-shift check)"}
+
+
 def format_table(rows: list[tuple[str, dict]], target: str) -> str:
-    """The table from the brief, for the headline target, with the other target as footnote."""
-    lines = [f"{'setting':<9}{'model AUC':>10}{'attack acc':>12}{'attack AUC':>12}   verdict      (target: {target} rows)"]
+    """The table from the brief; the setting column names the population each row used."""
+    lines = [f"{'setting':<28}{'model AUC':>10}{'attack acc':>12}{'attack AUC':>12}   verdict"]
     for name, r in rows:
         t = r["targets"][target]["result"]
-        lines.append(f"{name:<9}{r['model_auc']:>10.3f}{t['attack_acc']:>12.3f}{t['attack_auc']:>12.3f}   {t['verdict']}")
-    others = [o for o in rows[0][1]["targets"] if o != target]
-    for o in others:
-        parts = ", ".join(f"{name}: acc {r['targets'][o]['result']['attack_acc']:.3f} / AUC "
-                          f"{r['targets'][o]['result']['attack_auc']:.3f}" for name, r in rows)
-        lines.append(f"  ({o} rows: {parts})")
+        lines.append(f"{name + ' / ' + target + ' rows':<28}{r['model_auc']:>10.3f}"
+                     f"{t['attack_acc']:>12.3f}{t['attack_auc']:>12.3f}   {t['verdict']}")
+    for o in [o for o in rows[0][1]["targets"] if o != target]:
+        parts = "; ".join(f"{name}: acc {r['targets'][o]['result']['attack_acc']:.3f}, AUC "
+                          f"{r['targets'][o]['result']['attack_auc']:.3f}, {r['targets'][o]['result']['verdict']}"
+                          for name, r in rows)
+        lines.append(f"  footnote, {FOOTNOTES.get(o, o)}: {parts}")
     return "\n".join(lines)
 
 
@@ -288,7 +298,9 @@ def build_report(off: dict, on: Optional[dict], data: AttackData, target: str, s
     return {"attack": off["targets"][target]["attack"], "target": target,
             "dp_off": pick(off), "dp_on": pick(on),
             "model_auc_off": off["model_auc"], "model_auc_on": on["model_auc"] if on else None,
-            "members": f"bank_{data.meta['member_bank']} train rows", "nonmembers": data.meta["nonmember_source"],
+            "model_auc_global_test_off": off.get("model_auc_global_test"),
+            "model_auc_global_test_on": on.get("model_auc_global_test") if on else None,
+            "members": f"bank_{data.meta['member_bank']} train rows", "nonmembers": data.meta["nonmembers"],
             "n_per_class": data.meta["n_per_class"], "seed": seed, "runtime_s": round(seconds, 1),
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "detail": {"dp_off": off, "dp_on": on, "data": {k: v for k, v in data.meta.items()}}}
@@ -302,7 +314,6 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--out", default="state/redteam.json")
     ap.add_argument("--member-bank", type=int, default=1)
     ap.add_argument("--shadow-bank", type=int, default=2)
-    ap.add_argument("--nonmembers", choices=["global_test", "bank_test"], default="global_test")
     ap.add_argument("--target", choices=["laundering", "all"], default="laundering",
                     help="headline population for the table and redteam.json (both are always computed)")
     ap.add_argument("--n", type=int, default=20000, help="max members and non-members each")
@@ -320,7 +331,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         ap.error("--model-off is required unless --selftest")
 
     t0 = time.time()
-    data = load_attack_data(args.data_dir, args.member_bank, args.n, args.seed, args.nonmembers,
+    data = load_attack_data(args.data_dir, args.member_bank, args.n, args.seed,
                             None if args.attack == "loss_threshold" else args.shadow_bank)
     target = args.target if args.target in data.pops else "all"
     rows: list[tuple[str, dict]] = []
@@ -340,7 +351,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     write_json_atomic(args.out, build_report(off, on, data, target, args.seed, seconds))
     print(format_table(rows, target))
     print(f"\nattack: {off['targets'][target]['attack']} | members: bank_{args.member_bank} train | "
-          f"non-members: {args.nonmembers} | n per class: {data.meta['n_per_class']} | seed {args.seed} | "
+          f"non-members: {data.meta['nonmembers']} | n per class: {data.meta['n_per_class']} | seed {args.seed} | "
           f"{seconds:.1f}s | wrote {args.out}")
     if seconds > 120:
         log.warning("run took %.0fs, over the 2-minute budget", seconds)
