@@ -100,30 +100,62 @@ def clopper_pearson_eps(tp: int, n_in: int, fp: int, n_out: int, dp_delta: float
     return max(0.0, math.log((tpr_lo - dp_delta) / fpr_hi))
 
 
-def play(raw: dict[str, np.ndarray], sigma: float, clip: float, seed: int, bank: int = 0) -> dict:
-    """Clip + noise the precomputed updates with fedaml.dp.privatize, then score a projection attack.
-    Noise stream is seeded by (seed, bank, sigma) so banks are independent evidence."""
+def play(raw: dict[str, np.ndarray], sigma: float, clip: float, seed: int, bank: int = 0,
+         draws: int = 20) -> dict:
+    """Score the strongest standard adversary against the clipped (+ noised) updates.
+
+    The attacker knows the training recipe (as DP assumes), so it simulates
+    noise-free training on the calibration half of the trials to learn the
+    IN-minus-OUT direction of the *clipped* update; for Gaussian noise the
+    projection onto that direction is the likelihood-ratio test.  Every update
+    is then released ``draws`` times through ``fedaml.dp.privatize`` (fresh
+    noise each time), the threshold is set on the calibration half and the
+    attack is scored on the held-out half.  CIs bootstrap over trials, not
+    draws, so repeated noise on one update cannot fake precision.  Noise is
+    seeded by (seed, bank, sigma) so banks are independent evidence.
+    """
     rng = np.random.default_rng([seed, bank, int(round(sigma * 1000))])
-    U_in = np.array([dp.privatize(u, clip, sigma, sigma > 0, rng)[0] for u in raw["in"]])
-    U_out = np.array([dp.privatize(u, clip, sigma, sigma > 0, rng)[0] for u in raw["out"]])
-    trials = len(U_in)
+    clipped = {w: np.array([dp.clip(u, clip)[0] for u in raw[w]]) for w in raw}
+    trials = len(clipped["in"])
     half = trials // 2
-    direction = U_in[:half].mean(0) - U_out[:half].mean(0)
+    direction = clipped["in"][:half].mean(0) - clipped["out"][:half].mean(0)
     direction /= np.linalg.norm(direction) + 1e-12
-    s_cal = np.r_[U_in[:half] @ direction, U_out[:half] @ direction]
-    m_cal = np.r_[np.ones(half), np.zeros(half)]
-    t = _best_threshold(-s_cal, m_cal)                                       # IN iff score > -t
-    s_in, s_out = U_in[half:] @ direction, U_out[half:] @ direction
+
+    def release(world: str, idx: range) -> tuple[np.ndarray, np.ndarray]:
+        k = draws if sigma > 0 else 1
+        sc, tr = [], []
+        for t in idx:
+            for _ in range(k):
+                sc.append(dp.privatize(raw[world][t], clip, sigma, sigma > 0, rng)[0] @ direction)
+                tr.append(t)
+        return np.array(sc), np.array(tr)
+
+    ci_, _ = release("in", range(half)); co_, _ = release("out", range(half))
+    thr = _best_threshold(-np.r_[ci_, co_], np.r_[np.ones(len(ci_)), np.zeros(len(co_))])   # IN iff score > -thr
+    s_in, t_in = release("in", range(half, trials)); s_out, t_out = release("out", range(half, trials))
     s, m = np.r_[s_in, s_out], np.r_[np.ones(len(s_in)), np.zeros(len(s_out))]
-    pred = -s < t
+    pred = -s < thr
     tp, fp = int(pred[m == 1].sum()), int(pred[m == 0].sum())
-    res = {"sigma": sigma, "clip_norm": clip, "trials_per_world": trials, "n_scored": int(len(s)),
+    # cluster bootstrap over held-out trials
+    boot, ev = [], np.arange(half, trials)
+    brng = np.random.default_rng(seed)
+    for _ in range(300):
+        pick = brng.choice(ev, len(ev), replace=True)
+        bi = np.concatenate([s_in[t_in == t] for t in pick]); bo = np.concatenate([s_out[t_out == t] for t in pick])
+        boot.append(roc_auc_score(np.r_[np.ones(len(bi)), np.zeros(len(bo))], np.r_[bi, bo]))
+    n_trials_scored = int(trials - half)
+    res = {"sigma": sigma, "clip_norm": clip, "trials_per_world": trials, "noise_draws_per_update": draws if sigma > 0 else 1,
+           "n_scored": int(len(s)), "n_trials_scored_per_world": n_trials_scored,
            "attack_acc": float(np.mean(pred == (m == 1))), "attack_auc": float(roc_auc_score(m, s)),
-           "attack_auc_ci90": _bootstrap_auc_ci(s, m, seed), "tpr": tp / len(s_in), "fpr": fp / len(s_out),
-           "eps_empirical_lower_95": clopper_pearson_eps(tp, len(s_in), fp, len(s_out)),
+           "attack_auc_ci90": [float(x) for x in np.percentile(boot, [5, 95])],
+           "tpr": tp / len(s_in), "fpr": fp / len(s_out),
+           # epsilon bound counts independent trials only (conservative: draws are not independent mechanisms here)
+           "eps_empirical_lower_95": clopper_pearson_eps(int(round(tp / len(s_in) * n_trials_scored)), n_trials_scored,
+                                                         int(round(fp / len(s_out) * n_trials_scored)), n_trials_scored),
            "eps_accountant_1round": dp.epsilon_spent(sigma, 1) if sigma > 0 else None,
            "raw_update_norm_mean": float(np.linalg.norm(raw["out"], axis=1).mean()),
-           "raw_in_minus_out_norm_mean": float(np.linalg.norm(raw["in"] - raw["out"], axis=1).mean())}
+           "raw_in_minus_out_norm_mean": float(np.linalg.norm(raw["in"] - raw["out"], axis=1).mean()),
+           "noise_std_per_coord": sigma * clip}
     res["verdict"] = verdict(res)
     res["auc_distance_from_chance"] = abs(res["attack_auc"] - 0.5)
     return res
@@ -147,6 +179,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--trainer", choices=["prox", "sgd"], default="prox", help="prox = FEDERATION's default bank trainer")
     ap.add_argument("--subsample", type=float, default=0.9,
                     help="fraction of the bank's other rows used per trial (attacker uncertainty); 1.0 = attacker knows them all")
+    ap.add_argument("--draws", type=int, default=20, help="fresh DP noise draws per update (DP on)")
     ap.add_argument("--epochs", type=int, default=1)
     ap.add_argument("--eta", type=float, default=1e-3)
     ap.add_argument("--data-dir", default="data")
@@ -171,7 +204,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     raw = raw_updates(X, y, canary, start, args.trials, args.trainer, args.subsample, args.epochs, args.eta, args.seed)
     rows = {}
     for sg in [float(s) for s in args.sigmas.split(",")]:
-        rows["DP off" if sg == 0 else f"DP on σ={sg}"] = play(raw, sg, args.clip, args.seed, args.bank)
+        rows["DP off" if sg == 0 else f"DP on σ={sg}"] = play(raw, sg, args.clip, args.seed, args.bank, args.draws)
     seconds = time.time() - t0
     report = {"attack": "dp_audit_canary", "bank": args.bank, "target_row": f"bank_{args.bank} test.csv laundering row #{idx}",
               "target_row_txn": {k: str(v) for k, v in te.iloc[idx].items() if k not in ("from_acct", "to_acct")},
