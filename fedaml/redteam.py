@@ -348,6 +348,61 @@ def build_report(off: dict, on: Optional[dict], data: AttackData, target: str, s
             "detail": {"dp_off": off, "dp_on": on, "data": {k: v for k, v in data.meta.items()}}}
 
 
+def _model_dp(path: str) -> dict:
+    """DP settings a model was trained with, from its JSON (coordinator writes "dp" on final models)."""
+    with open(path) as fh:
+        raw = json.load(fh)
+    d = raw.get("dp") or {}
+    return {"enabled": bool(d.get("enabled", False)), "sigma": float(d.get("sigma") or 0.0),
+            "clip_norm": float(d.get("clip_norm") or 1.0), "mode": d.get("mode", "unknown"),
+            "rounds": int(raw.get("total_rounds") or raw.get("round") or 1)}
+
+
+def canary_report(game: dict, dp_cfgs: list, rows: list, args, model_report: dict) -> dict:
+    """state/redteam.json with the auditing game as headline (CONTRACTS §6 keys) + footnotes."""
+    from fedaml import dp as dpmod
+    out_rows = {}
+    for (name, path, cfg), (_, r), g in zip(dp_cfgs, rows, game["rows"]):
+        coordinator_sees_noise = cfg["enabled"] and cfg["mode"] == "local"
+        out_rows[name] = {**{k: g[k] for k in ("attack_acc", "attack_auc", "attack_auc_ci90", "tpr", "fpr",
+                                              "eps_empirical_lower_95", "verdict")},
+                          "n": g["n_trials_scored_per_world"] * 2, "model": path, "model_auc": r["model_auc"],
+                          "sigma": cfg["sigma"], "clip_norm": cfg["clip_norm"], "dp_mode": cfg["mode"],
+                          "eps_accountant_total": dpmod.epsilon_spent(cfg["sigma"], cfg["rounds"]) if cfg["enabled"] else None,
+                          "rounds": cfg["rounds"], "coordinator_sees_noised_update": coordinator_sees_noise}
+        if cfg["enabled"] and not coordinator_sees_noise:
+            out_rows[name]["warning"] = (f"model trained with dp mode '{cfg['mode']}': the coordinator receives the "
+                                         "un-noised update, so against the coordinator this row is the DP-off row")
+    names = list(out_rows)
+    off, on = out_rows[names[0]], (out_rows[names[1]] if len(names) > 1 else None)
+    pick = lambda r: None if r is None else {k: r[k] for k in ("attack_acc", "attack_auc", "attack_auc_ci90", "n", "verdict")}  # noqa: E731
+    return {"attack": "canary_update",
+            "target": f"one held-out laundering transaction (bank {args.canary_bank} test.csv row #{game['target_index']}) "
+                      f"IN vs OUT of bank {args.canary_bank}'s round update, as seen by the coordinator",
+            "dp_off": pick(off), "dp_on": pick(on),
+            "model_auc_off": off["model_auc"], "model_auc_on": on["model_auc"] if on else None,
+            "dp_on_sigma": on["sigma"] if on else None, "dp_on_mode": on["dp_mode"] if on else None,
+            "rows": out_rows, "game": {k: v for k, v in game.items() if k != "rows"},
+            "footnotes": {"model_level_row_attack": {k: model_report[k] for k in
+                                                    ("attack", "target", "dp_off", "dp_on", "model_auc_off", "model_auc_on",
+                                                     "n_per_class", "sweep") if k in model_report}},
+            "seed": args.seed, "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+
+
+def format_canary_table(rep: dict) -> str:
+    lines = [f"{'setting':<34}{'model AUC':>10}{'attack acc':>12}{'attack AUC':>12}  {'90% CI':<14} verdict"]
+    for name, r in rep["rows"].items():
+        label = name if r["sigma"] == 0 else f"{name}, σ={r['sigma']:g} {r['dp_mode']}"
+        ci = f"[{r['attack_auc_ci90'][0]:.2f}, {r['attack_auc_ci90'][1]:.2f}]"
+        lines.append(f"{label:<34}{r['model_auc']:>10.3f}{r['attack_acc']:>12.3f}{r['attack_auc']:>12.3f}  {ci:<14} {r['verdict']}")
+        if r.get("warning"):
+            lines.append(f"  ! {r['warning']}")
+    g = rep["game"]
+    lines.append(f"\nattack: canary_update | {rep['target']} | {g['trials_per_world']} trials per world, half calibrate, "
+                 f"half scored | trainer {g['trainer']}, subsample {g['subsample']}")
+    return "\n".join(lines)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Membership-inference red team: DP off vs DP on")
     ap.add_argument("--model-off", help="global model JSON trained with DP off")
@@ -363,6 +418,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--attack", choices=["auto", "loss_threshold", "shadow", "art"], default="auto")
     ap.add_argument("--shadow-epochs", type=int, default=5)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--canary-bank", type=int, default=3, help="bank whose round update the headline auditing game attacks")
+    ap.add_argument("--canary-trials", type=int, default=100, help="auditing-game trials per world")
+    ap.add_argument("--no-canary", action="store_true", help="skip the auditing game (model-level attack only)")
     ap.add_argument("--selftest", action="store_true",
                     help="train an overfit local model on the member sample and attack it (no federated model needed)")
     ap.add_argument("--selftest-epochs", type=int, default=20)
@@ -394,16 +452,31 @@ def main(argv: Optional[list[str]] = None) -> int:
         label = "DP on" if len(ons) == 1 else f"DP on ({Path(path).stem.replace('global_final_', '')})"
         rows.append((label, res))
         on = on or res                      # §6 dp_on = the first DP-on model given
-    seconds = time.time() - t0
     off = rows[0][1] if not args.selftest else rows[1][1] if args.model_off else rows[0][1]
-    report = build_report(off, on, data, target, args.seed, seconds)
-    report["sweep"] = {name: {"model_auc": r["model_auc"], **{k: r["targets"][target]["result"][k] for k in
-                       ("attack_acc", "attack_auc", "attack_auc_ci90", "n", "verdict")}} for name, r in rows}
-    write_json_atomic(args.out, report)
-    print(format_table(rows, target))
-    print(f"\nattack: {off['targets'][target]['attack']} | members: banks {members} train | "
-          f"non-members: {data.meta['nonmembers']} | n per class: {data.meta['n_per_class']} | seed {args.seed} | "
-          f"{seconds:.1f}s | wrote {args.out}")
+    model_report = build_report(off, on, data, target, args.seed, time.time() - t0)
+    model_report["sweep"] = {name: {"model_auc": r["model_auc"], **{k: r["targets"][target]["result"][k] for k in
+                             ("attack_acc", "attack_auc", "attack_auc_ci90", "n", "verdict")}} for name, r in rows}
+    model_table = format_table(rows, target)
+
+    if args.no_canary or not args.model_off:
+        model_report["runtime_s"] = round(time.time() - t0, 1)
+        write_json_atomic(args.out, model_report)
+        print(model_table)
+        seconds = time.time() - t0
+    else:
+        from fedaml.redteam_canary import run_game
+        dp_cfgs = []
+        for name, path in [("DP off", args.model_off)] + [(n, p) for (n, _), p in zip(rows[1:], ons)]:
+            dp_cfgs.append((name, path, _model_dp(path)))
+        game = run_game(args.data_dir, args.canary_bank, [c for _, _, c in dp_cfgs], args.canary_trials, args.seed)
+        report = canary_report(game, dp_cfgs, rows, args, model_report)
+        seconds = time.time() - t0
+        report["runtime_s"] = round(seconds, 1)
+        write_json_atomic(args.out, report)
+        print(format_canary_table(report))
+        print("\nfootnote, model-level row attack on the final global model (laundering rows, same-bank non-members):")
+        print("\n".join("  " + ln for ln in model_table.splitlines()))
+    print(f"\nseed {args.seed} | {seconds:.1f}s | wrote {args.out}")
     if seconds > 120:
         log.warning("run took %.0fs, over the 2-minute budget", seconds)
     return 0

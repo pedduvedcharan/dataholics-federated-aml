@@ -169,6 +169,23 @@ def pick_canary(X_te: np.ndarray, y_te: np.ndarray, start: np.ndarray) -> tuple[
     return i, X_te[i]
 
 
+def run_game(data_dir: str, bank: int, dp_cfgs: list[dict], trials: int, seed: int,
+             trainer: str = "prox", subsample: float = 0.9) -> dict:
+    """Library entry for ``fedaml.redteam``: one set of raw updates, one scored row per DP config."""
+    import pandas as pd
+    bdir = Path(data_dir) / "banks" / f"bank_{bank}"
+    tr, te = _read(bdir / "train.csv"), _read(bdir / "test.csv")
+    Xb, names = featurize(pd.concat([tr, te], ignore_index=True))
+    X, y = Xb[: len(tr)].astype(np.float64), _labels(tr)
+    X_te, y_te = Xb[len(tr):].astype(np.float64), _labels(te)
+    start = np.zeros(len(names) + 1)
+    idx, canary = pick_canary(X_te, y_te, start)
+    raw = raw_updates(X, y, canary, start, trials, trainer, subsample, 1, 1e-3, seed)
+    rows = [play(raw, c["sigma"] if c["enabled"] else 0.0, c["clip_norm"], seed, bank) for c in dp_cfgs]
+    return {"bank": bank, "target_index": idx, "trials_per_world": trials, "trainer": trainer,
+            "subsample": subsample, "start_model": "zeros (round 1)", "rows": rows}
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="DP auditing game on one flagged transaction")
     ap.add_argument("--bank", type=int, default=2)
