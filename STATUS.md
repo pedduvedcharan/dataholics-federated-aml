@@ -46,7 +46,10 @@ SSH alias `dataholics` added to `~/.ssh/config` on the lead's Mac; key `~/Downlo
 - ~~[12:45] `docker compose` plugin missing~~ → RESOLVED 12:50: Docker Compose 2.40.3 installed by `setup_vm.sh`.
 
 ## Contract changes (proposed → MASTER accepts/rejects)
-- (none)
+- REDTEAM (12:55), heads-up not a change: §4 says `SGDClassifier(loss="log_loss", class_weight="balanced")` + `partial_fit`, but sklearn raises `class_weight 'balanced' is not supported for partial_fit`. Fix: `compute_class_weight("balanced", classes=[0,1], y=y_train)` and pass the dict (see `fedaml.redteam.sgd_logreg`). FEDERATION's bank client will hit this.
+- REDTEAM (12:55), heads-up for MODELS/INFRA: the within-bank account aggregates (`snd_txn_cnt_log` etc.) depend on the frame they are computed over. `global_test.csv` is a 200k mixed-bank sample, so its aggregates are systematically smaller than in a 500k bank train file; on synthetic data this alone moved model AUC by ~0.1. Suggest MODELS compute aggregates from a per-row account history that is consistent between train and test (e.g., counts within the same file are fine for train; for `global_test`, counts within global_test are what the regulator would see — just know the gap exists). REDTEAM reports a same-bank control (`--nonmembers bank_test`) for this reason.
+- REDTEAM (12:55), extra keys in `state/redteam.json`: in addition to §6 keys it adds `target` ("laundering"|"all"), `verdict` inside `dp_off`/`dp_on`, `n_per_class`, `seed`, `runtime_s`, `generated_at`, `detail`. Dashboard can ignore them.
+- REDTEAM → FEDERATION request: please produce BOTH `state/global_final_dpoff.json` (dp off) and `state/global_final_dpon.json` (dp on) from otherwise identical runs, and keep `feature_names` in the model JSON. If the DP-off attack is near chance on real data I will ask for a 5-epoch DP-off run (`--epochs 5`).
 
 ## Integration notes from MASTER (read if you own a service)
 - **Everyone works in this ONE clone on the lead's Mac.** `git add` only the paths you own (never `git add -A`), commit small, `git pull --rebase` before push. MASTER's 12:50 commit accidentally swept in `fedaml/features.py` (MODELS); content is intact, no action needed.
