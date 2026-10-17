@@ -47,7 +47,7 @@ services:
       python3 -m fedaml.coordinator
       --rounds ${ROUNDS:-10}
       --banks ${BANKS:-1,2,3,4,5}
-      --eval-banks ${EVAL_BANKS:-1,2,3,4}
+      --eval-banks ${EVAL_BANKS:-2,3,4}
       --dp ${DP:-on}
       --sigma ${SIGMA:-0.8}
       --clip ${CLIP:-1.0}
@@ -57,6 +57,7 @@ services:
       --tag "${TAG:-}"
       --seed ${SEED:-42}
     # No-rogue run: BANKS=1,2,3,4 docker compose up --scale rogue=0
+    # EVAL_BANKS default 2,3,4 (MASTER 15:55): bank 1 trains but is unlearnable with per-row features; reported per bank only.
     ports:
       - "127.0.0.1:8000:8000"       # host-only, for curl debugging through an SSH tunnel
     healthcheck:
