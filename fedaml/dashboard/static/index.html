@@ -430,17 +430,22 @@ function renderAudit(s, rt) {
   const off = entries.find(([, r]) => !Number(r.sigma));
   const ons = entries.filter(([, r]) => Number(r.sigma) > 0);
   let vcls = 'warn', vtxt = 'auditing game incomplete';
-  if (off && ons.length) {
-    const allProt = ons.every(([, r]) => String(r.verdict).toUpperCase() === 'PROTECTED');
-    const o = off[1];
-    if (allProt && String(o.verdict).toUpperCase() === 'LEAKS') {
-      const above = ons.filter(([, r]) => !ciHas(r, 0.5));
-      vcls = 'good';
-      vtxt = `✔ Without noise the attacker spots the planted laundering transaction (AUC ${f3(o.attack_auc)}). With DP it falls to near chance: ${ons.map(([k, r]) => `${k} → ${f3(r.attack_auc)}`).join(', ')}.`
-        + (above.length ? ` ${above.map(([k, r]) => `${k} stays slightly above chance (90% CI ${f3(r.attack_auc_ci90[0])}–${f3(r.attack_auc_ci90[1])})`).join('; ')}.` : ' Every 90% CI includes 0.5.');
-    }
-    else if (allProt) { vcls = 'good'; vtxt = '✔ PROTECTED at every σ tested'; }
-    else { vcls = 'bad'; vtxt = '✖ the attack still beats chance at some σ: ' + ons.filter(([, r]) => String(r.verdict).toUpperCase() !== 'PROTECTED').map(([k]) => k).join(', '); }
+  const V = r => String(r.verdict || '').toUpperCase();
+  const cur = entries.find(([k, r]) => isCurrent(k, r));
+  const others = ons.filter(([k]) => !cur || k !== cur[0]);
+  const otherTxt = others.length ? ' Other settings: ' + others.map(([k, r]) => `${k} → ${f3(r.attack_auc)} (${V(r) === 'PROTECTED' ? 'protected' : V(r).toLowerCase()})`).join(', ') + '.' : '';
+  if (off && cur && Number(cur[1].sigma) > 0) {
+    // judge the setting this run actually uses; report the rest of the sweep neutrally
+    const [ck, cr] = cur;
+    const ciTxt = Array.isArray(cr.attack_auc_ci90) ? ` (90% CI ${f3(cr.attack_auc_ci90[0])}–${f3(cr.attack_auc_ci90[1])}${ciHas(cr, 0.5) ? ', includes chance' : ', excludes chance'})` : '';
+    const lead = V(off[1]) === 'LEAKS' ? `Without noise the attacker spots the planted laundering transaction (AUC ${f3(off[1].attack_auc)}). ` : '';
+    if (V(cr) === 'PROTECTED') { vcls = 'good'; vtxt = `✔ ${lead}At this run's ${ck} it falls to ${f3(cr.attack_auc)}${ciTxt}.${otherTxt}`; }
+    else if (V(cr) === 'LEAKS') { vcls = 'bad'; vtxt = `✖ ${lead}At this run's ${ck} the attack still works: ${f3(cr.attack_auc)}${ciTxt}.${otherTxt}`; }
+    else { vcls = 'warn'; vtxt = `▲ ${lead}At this run's ${ck}: ${f3(cr.attack_auc)}${ciTxt}, ${V(cr).toLowerCase()}.${otherTxt}`; }
+  } else if (off && ons.length) {
+    const allProt = ons.every(([, r]) => V(r) === 'PROTECTED');
+    vcls = allProt ? 'good' : 'warn';
+    vtxt = (allProt ? '✔ ' : '▲ ') + (V(off[1]) === 'LEAKS' ? `Without noise the attacker spots the planted laundering transaction (AUC ${f3(off[1].attack_auc)}). ` : '') + 'With DP: ' + ons.map(([k, r]) => `${k} → ${f3(r.attack_auc)} (${V(r).toLowerCase()})`).join(', ') + '.';
   }
   // footnote: the older row-level membership attacks, if REDTEAM keeps them in the file
   const rl = rt.row_level || rt.footnote || (rt.dp_off && rt.dp_on ? { dp_off: rt.dp_off, dp_on: rt.dp_on, target: rt.target } : null);
@@ -486,7 +491,7 @@ function renderEvidence(s) {
     ['2 · Training', `${s.state_dir || 'state'}/status.json`, pooled ? `rounds[].${pooled}, rounds[].${pooled.replace('auc', 'ap')}` + (evb ? ` (pooled over eval_banks=[${evb}] test sets)` : '') + `, rounds[].per_bank_auc` + (pooled !== 'global_auc' && rounds.some(r => typeof r.global_auc === 'number') ? '; rounds[].global_auc as control' : '') : 'rounds[].global_auc, rounds[].global_ap, rounds[].per_bank_auc (global_test control; pooled key not written yet)', age('status.json')],
     ['2 · Training (reference lines)', `${s.state_dir || 'state'}/baselines.json`, 'per_bank.<id>.{logreg,rf,hgb}.pooled_auc (best per bank; .auc = own test, fallback only), centralized_logreg.auc and federated.auc (both pooled basis)', age('baselines.json')],
     ['3 · Privacy', `${s.state_dir || 'state'}/status.json`, `dp.epsilon_spent (approximate), dp.sigma, dp.clip_norm, dp.delta, dp.mode, dp.noise_added_by, dp.epsilon_note, round/total_rounds; planned total = dp.epsilon_planned_total or ε spent × total_rounds / round` + (typeof s.eps_budget === 'number' ? ` · policy budget ${s.eps_budget} is a dashboard override (--eps-budget), not a measurement` : ' · no policy budget set'), age('status.json')],
-    ['4 · Rogue bank', `${s.state_dir || 'state'}/${rogueSrc}`, 'rounds[].accepted, rounds[].excluded[].{bank_id,reason,score}' + (s.status_rogue_off ? '; final global_auc of status_rogue_off.json vs status_rogue_on.json' : ''), age(rogueSrc)],
+    ['4 · Rogue bank', `${s.state_dir || 'state'}/${rogueSrc}`, 'rounds[].accepted, rounds[].excluded[].{bank_id,reason,score}' + (s.status_rogue_off ? '; last round global_auc + global_ap and rogue exclusion count of status_rogue_off.json vs status_rogue_on.json' : ''), age(rogueSrc)],
     ['5 · Red team', `${s.state_dir || 'state'}/redteam.json`, rt.rows ? 'attack, bank, target_row, rows.<setting>.{sigma, attack_auc, attack_auc_ci90, eps_empirical_lower_95, eps_accountant_1round, verdict}; footnote from row_level (or dp_off/dp_on)' : `attack, target (headline = ${rt.target || 'laundering'} rows), dp_off/dp_on.{attack_acc,attack_auc,n,verdict}, model_auc_off/on; footnote from detail.dp_off|dp_on.targets.<other>.result`, age('redteam.json')],
     ['6 · Footprint', `${s.state_dir || 'state'}/footprint.json`, 'per_container_peak_rss_mb, seconds_per_round, total_runtime_s, cpu_count, arch', age('footprint.json')],
   ];
