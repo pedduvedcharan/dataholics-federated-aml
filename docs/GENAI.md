@@ -88,11 +88,28 @@ docker build -f fedaml/llm/Dockerfile -t fedaml-llm .           # ~5.5 min on th
 docker compose run --rm llm /app/fetch_model.sh                 # once: download + big-endian convert into ./models
 docker compose up -d llm                                        # llama-server on 127.0.0.1:8080, healthcheck /health
 ALERT_ID=A01 docker compose run --rm genai                      # SAR_ENGINE=llm by default, falls back to template
+ALERT_ID=A01 SAR_ENGINE=template docker compose run --rm genai  # never starts or needs the LLM
 docker compose stop llm
 ```
-Weights live in the `./models` volume, not in the image. To use Qwen 1.5B, the `llm` service needs
-`LLM_MODEL_FILE: ${LLM_MODEL_FILE:-qwen2.5-0.5b-instruct-q8_0-be.gguf}` in its environment; the 1.5B file is
-already in `~/fedaml/models` on the VM. `fetch_model.sh` takes `MODEL_REPO` and `MODEL_FILE` for other models.
+Weights live in the `./models` volume, not in the image. `fetch_model.sh` takes `MODEL_REPO` and `MODEL_FILE`
+for other models.
+
+## Which model, when (MASTER decision, Oct 17 16:00)
+| Use | Model | Command | Seconds per SAR |
+|---|---|---|---|
+| Anything live, default | Qwen2.5-0.5B-Instruct Q8_0 | `docker compose up -d llm` | about 10 |
+| The three recorded demo SARs A01–A03 | Qwen2.5-1.5B-Instruct Q8_0 | `LLM_MODEL_FILE=qwen2.5-1.5b-instruct-q8_0-be.gguf docker compose up -d llm` | about 41 |
+
+Each SAR footer names the engine, the model file and the LLM seconds, so a reader can tell which one wrote it.
+Both GGUFs are in `~/fedaml/models` on the VM.
+
+Run order after the integration run's training phase ends:
+```
+docker compose run --rm alerts
+LLM_MODEL_FILE=qwen2.5-1.5b-instruct-q8_0-be.gguf docker compose up -d llm
+for a in A01 A02 A03; do ALERT_ID=$a docker compose run --rm genai; done
+docker compose stop llm
+```
 
 ## Honest limits
 - The assessment is narration by a 0.5–1.5 B parameter model. It reads fluently but can overstate or
