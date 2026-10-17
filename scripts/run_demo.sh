@@ -79,15 +79,6 @@ wait_final() {  # $1 = epoch the phase started
   done
 }
 
-capture_ps() {  # text "screenshot" of docker ps + docker stats WHILE banks train (judging criterion 3)
-  local out="$1" t0; t0=$(date +%s)
-  until [ "$(docker ps --format '{{.Names}}' | grep -cE '^bank[1-4]$')" -ge 2 ] || [ $(( $(date +%s) - t0 )) -gt 60 ]; do sleep 1; done
-  sleep 4   # let the banks get into local training
-  { echo "# captured $(date -u +%FT%TZ) during training ($(uname -m), $(nproc) cpus)"
-    echo "\$ docker ps"; docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"; echo
-    echo "\$ docker stats --no-stream"; docker stats --no-stream; } > "$out" 2>&1
-}
-
 run_phase() {  # $1 = tag (dpoff|dpon), $2 = DP value
   local tag="$1" dp="$2" t; t=$(date +%s)
   local coord_cmd; coord_cmd=$(DP="$dp" TAG="$tag" $DC config --format json 2>/dev/null | python3 -c "import json,sys; print(' '.join(json.load(sys.stdin)['services']['coordinator']['command']))" 2>/dev/null)
@@ -96,7 +87,7 @@ run_phase() {  # $1 = tag (dpoff|dpon), $2 = DP value
   $DC rm -fs $TRAIN_SVCS rogue >/dev/null 2>&1 || true
   DP="$dp" DEFENSE=on TAG="$tag" $DC up -d $TRAIN_SVCS dashboard || die "docker compose up failed"
   local cap_pid=""
-  if [ "$tag" = "dpon" ]; then capture_ps submission/screenshots/02_docker_ps.txt & cap_pid=$!; fi
+  if [ "$tag" = "dpon" ]; then WAIT_S=60 scripts/capture_screens.sh --wait > logs/capture_screens.log 2>&1 & cap_pid=$!; fi
   sleep 3
   wait_final "$t"
   [ -n "$cap_pid" ] && wait "$cap_pid" 2>/dev/null
@@ -142,5 +133,9 @@ fi
 $DC stop $TRAIN_SVCS rogue >/dev/null 2>&1 || true
 log "footprint"
 scripts/footprint.sh stop
+if [ -n "$(find state logs -not -user "$(id -un)" -print -quit 2>/dev/null)" ]; then   # containers write as root
+  sudo -n chown -R "$(id -u):$(id -g)" state logs 2>/dev/null && sudo -n chmod -R u+rwX,go+rX state logs 2>/dev/null \
+    && log "state/ and logs/ handed back to $(id -un)" || log "WARN: could not chown state/ logs/ (sudo)"
+fi
 log "done in $(( $(date +%s) - T_START ))s. state/:"; ls -la state | grep -v '^total'
 log "dashboard still up: ssh -L 8050:localhost:8050 dataholics  ->  http://localhost:8050"
