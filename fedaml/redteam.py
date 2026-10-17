@@ -358,48 +358,61 @@ def _model_dp(path: str) -> dict:
             "rounds": int(raw.get("total_rounds") or raw.get("round") or 1)}
 
 
-def canary_report(game: dict, dp_cfgs: list, rows: list, args, model_report: dict) -> dict:
-    """state/redteam.json with the auditing game as headline (CONTRACTS §6 keys) + footnotes."""
+def _setting(sigma: float) -> str:
+    return "DP off" if sigma == 0 else f"σ {sigma:g}"
+
+
+def canary_report(game: dict, cfg_by_setting: dict, model_by_setting: dict, args, model_report: dict,
+                  current: str) -> dict:
+    """state/redteam.json: auditing game as headline (keys AUDIT's panel 5 reads), CONTRACTS §6 keys
+    populated from the headline pair, row-level model attack under ``row_level``."""
     from fedaml import dp as dpmod
-    out_rows = {}
-    for (name, path, cfg), (_, r), g in zip(dp_cfgs, rows, game["rows"]):
-        coordinator_sees_noise = cfg["enabled"] and cfg["mode"] == "local"
-        out_rows[name] = {**{k: g[k] for k in ("attack_acc", "attack_auc", "attack_auc_ci90", "tpr", "fpr",
-                                              "eps_empirical_lower_95", "verdict")},
-                          "n": g["n_trials_scored_per_world"] * 2, "model": path, "model_auc": r["model_auc"],
-                          "sigma": cfg["sigma"], "clip_norm": cfg["clip_norm"], "dp_mode": cfg["mode"],
-                          "eps_accountant_total": dpmod.epsilon_spent(cfg["sigma"], cfg["rounds"]) if cfg["enabled"] else None,
-                          "rounds": cfg["rounds"], "coordinator_sees_noised_update": coordinator_sees_noise}
-        if cfg["enabled"] and not coordinator_sees_noise:
-            out_rows[name]["warning"] = (f"model trained with dp mode '{cfg['mode']}': the coordinator receives the "
-                                         "un-noised update, so against the coordinator this row is the DP-off row")
-    names = list(out_rows)
-    off, on = out_rows[names[0]], (out_rows[names[1]] if len(names) > 1 else None)
+    rows = {}
+    for g in game["rows"]:
+        name = _setting(g["sigma"])
+        cfg = cfg_by_setting.get(name, {"enabled": g["sigma"] > 0, "sigma": g["sigma"], "clip_norm": g["clip_norm"],
+                                        "mode": "local", "rounds": 10})
+        mdl = model_by_setting.get(name)
+        noised_at_bank = cfg["enabled"] and cfg["mode"] == "local"
+        row = {**{k: g[k] for k in ("sigma", "attack_acc", "attack_auc", "attack_auc_ci90", "tpr", "fpr",
+                                    "eps_empirical_lower_95", "eps_accountant_1round", "verdict")},
+               "n": g["n_trials_scored_per_world"] * 2, "clip_norm": g["clip_norm"],
+               "eps_accountant_total": dpmod.epsilon_spent(g["sigma"], cfg["rounds"]) if g["sigma"] > 0 else None,
+               "rounds": cfg["rounds"], "model": mdl["path"] if mdl else None,
+               "model_auc": mdl["model_auc"] if mdl else None,
+               "dp_mode": cfg["mode"] if mdl else "local (game)", "coordinator_sees_noised_update": bool(noised_at_bank or (not mdl and g["sigma"] > 0))}
+        if mdl and cfg["enabled"] and not noised_at_bank:
+            row["warning"] = (f"model trained with dp mode '{cfg['mode']}': the coordinator receives the un-noised "
+                              "update, so against the coordinator this run sits on the DP-off row")
+        rows[name] = row
+    off, on = rows["DP off"], rows.get(current)
     pick = lambda r: None if r is None else {k: r[k] for k in ("attack_acc", "attack_auc", "attack_auc_ci90", "n", "verdict")}  # noqa: E731
+    row_level = {k: model_report[k] for k in ("attack", "target", "dp_off", "dp_on", "model_auc_off", "model_auc_on",
+                                              "n_per_class", "sweep", "members", "nonmembers") if k in model_report}
     return {"attack": "canary_update",
             "target": f"one held-out laundering transaction (bank {args.canary_bank} test.csv row #{game['target_index']}) "
                       f"IN vs OUT of bank {args.canary_bank}'s round update, as seen by the coordinator",
             "dp_off": pick(off), "dp_on": pick(on),
             "model_auc_off": off["model_auc"], "model_auc_on": on["model_auc"] if on else None,
-            "dp_on_sigma": on["sigma"] if on else None, "dp_on_mode": on["dp_mode"] if on else None,
-            "rows": out_rows, "game": {k: v for k, v in game.items() if k != "rows"},
-            "footnotes": {"model_level_row_attack": {k: model_report[k] for k in
-                                                    ("attack", "target", "dp_off", "dp_on", "model_auc_off", "model_auc_on",
-                                                     "n_per_class", "sweep") if k in model_report}},
+            "current_sigma": on["sigma"] if on else None, "current_setting": current if on else None,
+            "dp_on_mode": cfg_by_setting.get(current, {}).get("mode") if on else None,
+            "rows": rows, "row_level": row_level, "game": {k: v for k, v in game.items() if k != "rows"},
             "seed": args.seed, "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
 
 
 def format_canary_table(rep: dict) -> str:
-    lines = [f"{'setting':<34}{'model AUC':>10}{'attack acc':>12}{'attack AUC':>12}  {'90% CI':<14} verdict"]
+    lines = [f"{'setting':<22}{'model AUC':>10}{'attack acc':>12}{'attack AUC':>12}  {'90% CI':<14} verdict"]
     for name, r in rep["rows"].items():
-        label = name if r["sigma"] == 0 else f"{name}, σ={r['sigma']:g} {r['dp_mode']}"
+        mark = "  <- this run" if name == rep.get("current_setting") else ""
+        mauc = f"{r['model_auc']:.3f}" if r["model_auc"] is not None else "-"
         ci = f"[{r['attack_auc_ci90'][0]:.2f}, {r['attack_auc_ci90'][1]:.2f}]"
-        lines.append(f"{label:<34}{r['model_auc']:>10.3f}{r['attack_acc']:>12.3f}{r['attack_auc']:>12.3f}  {ci:<14} {r['verdict']}")
+        lines.append(f"{name:<22}{mauc:>10}{r['attack_acc']:>12.3f}{r['attack_auc']:>12.3f}  {ci:<14} {r['verdict']}{mark}")
         if r.get("warning"):
             lines.append(f"  ! {r['warning']}")
     g = rep["game"]
     lines.append(f"\nattack: canary_update | {rep['target']} | {g['trials_per_world']} trials per world, half calibrate, "
-                 f"half scored | trainer {g['trainer']}, subsample {g['subsample']}")
+                 f"half scored | trainer {g['trainer']}, subsample {g['subsample']} | model AUC = pooled banks 2,3,4 "
+                 f"(fedaml.baselines), '-' = σ scored in the game only, no trained model given")
     return "\n".join(lines)
 
 
@@ -420,6 +433,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--canary-bank", type=int, default=3, help="bank whose round update the headline auditing game attacks")
     ap.add_argument("--canary-trials", type=int, default=100, help="auditing-game trials per world")
+    ap.add_argument("--canary-sigmas", default="0.3,0.5,0.8",
+                    help="extra σ values scored in the game (the DP-on models' own σ are always included)")
     ap.add_argument("--no-canary", action="store_true", help="skip the auditing game (model-level attack only)")
     ap.add_argument("--selftest", action="store_true",
                     help="train an overfit local model on the member sample and attack it (no federated model needed)")
@@ -465,11 +480,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         seconds = time.time() - t0
     else:
         from fedaml.redteam_canary import run_game
-        dp_cfgs = []
-        for name, path in [("DP off", args.model_off)] + [(n, p) for (n, _), p in zip(rows[1:], ons)]:
-            dp_cfgs.append((name, path, _model_dp(path)))
-        game = run_game(args.data_dir, args.canary_bank, [c for _, _, c in dp_cfgs], args.canary_trials, args.seed)
-        report = canary_report(game, dp_cfgs, rows, args, model_report)
+        cfg_by, model_by = {}, {}
+        for (_, r), path in zip(rows, [args.model_off] + ons):
+            cfg = _model_dp(path)
+            sg = cfg["sigma"] if cfg["enabled"] else 0.0
+            if path != args.model_off and sg == 0:
+                log.warning("%s has no dp settings recorded; treating it as DP off", path)
+            cfg_by[_setting(sg)], model_by[_setting(sg)] = cfg, {"path": path, "model_auc": r["model_auc"]}
+        sigmas = sorted({0.0} | {float(x) for x in args.canary_sigmas.split(",") if x} |
+                        {c["sigma"] for c in cfg_by.values() if c["enabled"]})
+        clip = next((c["clip_norm"] for c in cfg_by.values()), 1.0)
+        game = run_game(args.data_dir, args.canary_bank,
+                        [{"enabled": sg > 0, "sigma": sg, "clip_norm": clip} for sg in sigmas], args.canary_trials, args.seed)
+        on_cfg = _model_dp(ons[0]) if ons else None
+        current = _setting(on_cfg["sigma"]) if on_cfg and on_cfg["enabled"] else None
+        report = canary_report(game, cfg_by, model_by, args, model_report, current)
         seconds = time.time() - t0
         report["runtime_s"] = round(seconds, 1)
         write_json_atomic(args.out, report)
