@@ -227,17 +227,22 @@ function renderTraining(s) {
   const st = s.status, bl = s.baselines;
   const rounds = (st && Array.isArray(st.rounds)) ? st.rounds.filter(r => r && r.round != null) : [];
   const labels = rounds.map(r => 'r' + r.round);
-  const pooledKey = ['pooled_auc', 'pooled_bank_auc', 'bank_pooled_auc'].find(k => rounds.some(r => typeof r[k] === 'number'));
-  const pooledApKey = pooledKey ? pooledKey.replace('auc', 'ap') : null;
+  // MASTER 15:55: when status.json carries eval_banks, global_auc/global_ap ARE the pooled score over those banks' test sets.
+  const evalBanks = (st && Array.isArray(st.eval_banks) && st.eval_banks.length) ? st.eval_banks.map(String) : null;
+  let pooledKey = ['pooled_auc', 'pooled_bank_auc', 'bank_pooled_auc'].find(k => rounds.some(r => typeof r[k] === 'number')) || null;
+  let pooledApKey = pooledKey ? pooledKey.replace('auc', 'ap') : null;
+  if (!pooledKey && evalBanks) { pooledKey = 'global_auc'; pooledApKey = 'global_ap'; }
   const auc = rounds.map(r => pooledKey ? r[pooledKey] : r.global_auc);
-  const mainLabel = pooledKey ? 'Global model · pooled per-bank test AUC' : 'Global model AUC (global_test, control only)';
-  const hasControl = pooledKey && rounds.some(r => typeof r.global_auc === 'number');
+  const evalTxt = evalBanks ? `banks ${evalBanks.join(',')}` : 'banks';
+  const mainLabel = pooledKey ? `Global model · AUC pooled over ${evalTxt}' test sets` : 'Global model AUC (global_test, control only)';
+  const hasControl = pooledKey && pooledKey !== 'global_auc' && rounds.some(r => typeof r.global_auc === 'number');
+  const notLearnable = b => !!(evalBanks && !evalBanks.includes(String(b)));
   const n = Math.max(labels.length, 2);
   const flat = v => Array(n).fill(v);
   const xs = labels.length >= 2 ? labels : (labels.length === 1 ? [labels[0], ''] : ['r1', 'r2']);
   const datasets = [{ label: mainLabel, data: auc, borderColor: css('--s1'), backgroundColor: css('--s1'),
     borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.15, endLabel: auc.length ? f3(auc[auc.length - 1]) : '' }];
-  const legend = [{ c: css('--s1'), t: pooledKey ? 'global federated model, pooled per-bank test AUC' : 'global federated model AUC (global_test, control only)' }];
+  const legend = [{ c: css('--s1'), t: pooledKey ? `global federated model, AUC pooled over ${evalTxt}' own test sets` : 'global federated model AUC (global_test, control only)' }];
   if (hasControl) {
     datasets.push({ label: 'global_test (control only)', data: rounds.map(r => r.global_auc), borderColor: css('--s7'), borderWidth: 1, pointRadius: 2, borderDash: [2, 3], tension: 0.15 });
     legend.push({ c: css('--s7'), t: 'same model on global_test.csv (control only)' });
@@ -255,13 +260,13 @@ function renderTraining(s) {
       datasets.push({ label: 'Federated final (baselines.json)', data: flat(fv), borderColor: css('--s3'), borderWidth: 1.5, pointRadius: 0, borderDash: [2, 3] });
       legend.push({ c: css('--s3'), t: 'federated final model as scored by MODELS ' + f3(fv) });
     }
-    const locals = Object.entries(bl.per_bank || {}).map(([b, m]) => [b, bestLocal(m)]).filter(x => x[1]);
+    const locals = Object.entries(bl.per_bank || {}).filter(([b]) => !notLearnable(b)).map(([b, m]) => [b, bestLocal(m)]).filter(x => x[1]);
     locals.forEach(([b, v], i) => datasets.push({ label: `Bank ${b} best local (${v.model}, ${v.basis})`, data: flat(v.auc), borderColor: css('--muted'),
       borderWidth: 1, pointRadius: 0, endLabel: i === 0 ? 'one bank' : '', endOffset: 0 }));
     if (locals.length) legend.push({ c: css('--muted'), t: `each bank alone (${locals[0][1].basis} basis), best of logreg/rf/hgb: ` + locals.map(([b, v]) => `b${b} ${f3(v.auc)}`).join(' · ') });
   }
   $('auc-legend').innerHTML = legend.map(l => `<span><span class="sw" style="border-color:${l.c}"></span>${esc(l.t)}</span>`).join('');
-  $('train-note').textContent = st ? `round ${st.round ?? '?'} of ${st.total_rounds ?? '?'}` + (st.dp && st.dp.enabled ? ' · DP on' : ' · DP off') + (pooledKey ? ' · metric: pooled per-bank test.csv' : ' · metric: global_test.csv (control only)') : 'waiting for status.json';
+  $('train-note').textContent = st ? `round ${st.round ?? '?'} of ${st.total_rounds ?? '?'}` + (st.dp && st.dp.enabled ? ' · DP on' : ' · DP off') + (pooledKey ? ` · metric: pooled over ${evalTxt}' test.csv` : ' · metric: global_test.csv (control only)') : 'waiting for status.json';
 
   if (typeof Chart === 'undefined') { $('aucChart').parentElement.innerHTML = '<div class="waiting">Chart.js not loaded (no CDN access) — see table below</div>'; }
   else if (!aucChart) {
@@ -271,13 +276,14 @@ function renderTraining(s) {
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${f3(c.parsed.y)}` } } },
       scales: { x: { grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') } },
                 y: { min: 0.5, max: 1.0, grid: { color: css('--grid') }, ticks: { color: css('--muted'), stepSize: 0.1 }, border: { color: css('--axis') },
-                     title: { display: true, text: pooledKey ? 'ROC AUC, pooled per-bank test' : 'ROC AUC, global_test (control)', color: css('--muted'), font: { size: 11 } } } } } });
-  } else { aucChart.data.labels = xs; aucChart.data.datasets = datasets; aucChart.options.scales.y.title.text = pooledKey ? 'ROC AUC, pooled per-bank test' : 'ROC AUC, global_test (control)'; aucChart.update('none'); }
+                     title: { display: true, text: pooledKey ? `ROC AUC, pooled over ${evalTxt}` : 'ROC AUC, global_test (control)', color: css('--muted'), font: { size: 11 } } } } } });
+  } else { aucChart.data.labels = xs; aucChart.data.datasets = datasets; aucChart.options.scales.y.title.text = pooledKey ? `ROC AUC, pooled over ${evalTxt}` : 'ROC AUC, global_test (control)'; aucChart.update('none'); }
 
   if (rounds.length) {
     const banks = Object.keys(rounds[rounds.length - 1].per_bank_auc || {});
-    const aucHdr = pooledKey ? 'pooled AUC' : 'AUC (global_test, control)';
-    $('train-table').innerHTML = `<table><tr><th>round</th><th class="num">${aucHdr}</th><th class="num">AP</th>${hasControl ? '<th class="num">global_test (control)</th>' : ''}${banks.map(b => `<th class="num">b${esc(b)} AUC</th>`).join('')}</tr>` +
+    const aucHdr = pooledKey ? `pooled AUC (${evalTxt})` : 'AUC (global_test, control)';
+    const note = banks.some(notLearnable) ? `<div style="color:var(--muted); font-size:11px; margin:4px 0 2px">* bank ${banks.filter(notLearnable).join(', ')}: AUC ≈ 0.5 is real, not a bug — its laundering is not learnable with per-row features (see docs); excluded from the pooled score (eval_banks = ${evalBanks.join(',')}).</div>` : '';
+    $('train-table').innerHTML = note + `<table><tr><th>round</th><th class="num">${aucHdr}</th><th class="num">AP</th>${hasControl ? '<th class="num">global_test (control)</th>' : ''}${banks.map(b => `<th class="num">b${esc(b)} AUC${notLearnable(b) ? ' *' : ''}</th>`).join('')}</tr>` +
       rounds.slice().reverse().map(r => `<tr><td>${esc(r.round)}</td><td class="num">${f3(pooledKey ? r[pooledKey] : r.global_auc)}</td><td class="num">${f3(pooledKey ? r[pooledApKey] : r.global_ap)}</td>${hasControl ? `<td class="num">${f3(r.global_auc)}</td>` : ''}${banks.map(b => `<td class="num">${f3((r.per_bank_auc || {})[b])}</td>`).join('')}</tr>`).join('') + '</table>';
   } else $('train-table').innerHTML = '<div class="waiting">no rounds completed yet</div>';
 }
@@ -383,12 +389,13 @@ function renderEvidence(s) {
   const f = s.files || {};
   const age = name => { const i = f[name]; if (!i) return '—'; if (!i.present) return 'missing'; return i.mtime ? `${i.mtime.replace('T', ' ').replace('+00:00', 'Z')} (${Math.round(i.age_s)}s ago, ${kb(i.bytes)})` : 'present'; };
   const st = s.status || {}; const rounds = Array.isArray(st.rounds) ? st.rounds : [];
-  const pooled = ['pooled_auc', 'pooled_bank_auc', 'bank_pooled_auc'].find(k => rounds.some(r => typeof r[k] === 'number'));
+  const evb = Array.isArray(st.eval_banks) && st.eval_banks.length ? st.eval_banks.join(',') : null;
+  const pooled = ['pooled_auc', 'pooled_bank_auc', 'bank_pooled_auc'].find(k => rounds.some(r => typeof r[k] === 'number')) || (evb ? 'global_auc' : null);
   const rogueSrc = (rounds.some(r => (r.excluded || []).length) || !s.status_rogue_on) ? 'status.json' : 'status_rogue_on.json';
   const rt = s.redteam || {};
   const rows = [
     ['1 · Regulator view', `${s.logs_dir || 'logs/egress'}/bank_<id>.jsonl`, 'kind=model_update → messages, bytes, params_shared, rows_shared; kind=blocked → blocked attempts; tail = last 10 lines by ts', (f['logs/egress'] && f['logs/egress'].present) ? `${f['logs/egress'].n_files} file(s)` : 'missing'],
-    ['2 · Training', `${s.state_dir || 'state'}/status.json`, pooled ? `rounds[].${pooled}, rounds[].${pooled.replace('auc', 'ap')}, rounds[].per_bank_auc` + (rounds.some(r => typeof r.global_auc === 'number') ? '; rounds[].global_auc as control' : '') : 'rounds[].global_auc, rounds[].global_ap, rounds[].per_bank_auc (global_test control; pooled key not written yet)', age('status.json')],
+    ['2 · Training', `${s.state_dir || 'state'}/status.json`, pooled ? `rounds[].${pooled}, rounds[].${pooled.replace('auc', 'ap')}` + (evb ? ` (pooled over eval_banks=[${evb}] test sets)` : '') + `, rounds[].per_bank_auc` + (pooled !== 'global_auc' && rounds.some(r => typeof r.global_auc === 'number') ? '; rounds[].global_auc as control' : '') : 'rounds[].global_auc, rounds[].global_ap, rounds[].per_bank_auc (global_test control; pooled key not written yet)', age('status.json')],
     ['2 · Training (reference lines)', `${s.state_dir || 'state'}/baselines.json`, 'per_bank.<id>.{logreg,rf,hgb}.pooled_auc (best per bank; .auc = own test, fallback only), centralized_logreg.auc and federated.auc (both pooled basis)', age('baselines.json')],
     ['3 · Privacy budget', `${s.state_dir || 'state'}/status.json`, `dp.epsilon_spent, dp.sigma, dp.clip_norm, dp.delta, round/total_rounds · budget ${s.eps_budget} is a dashboard setting (--eps-budget), not a measurement`, age('status.json')],
     ['4 · Rogue bank', `${s.state_dir || 'state'}/${rogueSrc}`, 'rounds[].accepted, rounds[].excluded[].{bank_id,reason,score}' + (s.status_rogue_off ? '; final global_auc of status_rogue_off.json vs status_rogue_on.json' : ''), age(rogueSrc)],
