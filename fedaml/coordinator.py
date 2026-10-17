@@ -124,6 +124,7 @@ class Coordinator:
         self.history: list[dict] = []
         self.started = time.time()
         self.round_times: list[float] = []
+        self.rng = np.random.default_rng(args.seed)
         self.tests: dict = {}
         self.evaluate = None
         self._load_evaluator()
@@ -133,36 +134,48 @@ class Coordinator:
 
     # ----- evaluation
     def _load_evaluator(self) -> None:
-        """Featurize every evaluation bank's test.csv once; score the pooled set each round."""
+        """Featurize test.csv once for every expected and evaluation bank.
+
+        Pooled AUC/AP (the headline) is computed over ``--eval-banks`` only (bank 1 is unlearnable
+        with per-row features and would dominate the pool, MASTER 15:55); per-bank AUC is reported
+        for every expected bank, including ones outside the pool.
+        """
         from fedaml.baselines import evaluate_model_pooled, load_bank_tests
+        self.eval_banks = [int(x) for x in self.args.eval_banks.split(",") if x.strip()]
         self.tests = {}
-        for b in [int(x) for x in self.args.eval_banks.split(",") if x.strip()]:
+        for b in sorted(set(self.eval_banks) | set(self.banks)):
             try:
-                self.tests.update(load_bank_tests([b], data_dir=self.args.data_dir or None))
+                X, y = load_bank_tests([b], data_dir=self.args.data_dir or None)[b]
+                self.tests[b] = (X.astype(np.float64), y)
             except Exception as exc:  # noqa: BLE001
-                log.warning("bank %s test.csv not loadable (%s); left out of the pooled evaluation", b, exc)
-        if not self.tests:
-            log.warning("no test sets loadable; global_auc will be null")
+                log.warning("bank %s test.csv not loadable (%s); left out of the evaluation", b, exc)
+        pool = {b: self.tests[b] for b in self.eval_banks if b in self.tests}
+        if not pool:
+            log.warning("no evaluation test sets loadable; global_auc will be null")
             self.evaluate = None
             return
-        self.tests = {b: (X.astype(np.float64), y) for b, (X, y) in self.tests.items()}
-        log.info("pooled evaluation set: banks %s, %d rows", list(self.tests), sum(len(y) for _, y in self.tests.values()))
-        self.evaluate = lambda path: evaluate_model_pooled(path, tests=self.tests)
+        log.info("pooled evaluation set: banks %s, %d rows; per-bank AUC for banks %s", list(pool),
+                 sum(len(y) for _, y in pool.values()), list(self.tests))
+        self.evaluate = lambda path: evaluate_model_pooled(path, tests=pool)
 
-    def _auc(self, coef: np.ndarray, intercept: np.ndarray) -> float | None:
-        """Pooled AUC of an arbitrary weight vector (used for the per-bank local models)."""
-        if not self.tests:
+    def _auc(self, coef: np.ndarray, intercept: np.ndarray, banks=None) -> float | None:
+        """Pooled AUC of an arbitrary weight vector over ``banks`` (default: the evaluation pool)."""
+        banks = [b for b in (banks or self.eval_banks) if b in self.tests]
+        if not banks:
             return None
         from sklearn.metrics import roc_auc_score
-        y = np.concatenate([t[1] for t in self.tests.values()])
-        z = np.concatenate([t[0] @ coef + float(intercept[0]) for t in self.tests.values()])
+        y = np.concatenate([self.tests[b][1] for b in banks])
+        z = np.concatenate([self.tests[b][0] @ coef + float(intercept[0]) for b in banks])
+        if y.min() == y.max():
+            return None
         return round(float(roc_auc_score(y, 1.0 / (1.0 + np.exp(-np.clip(z, -500, 500))))), 6)
 
     # ----- documents
     def config(self) -> dict:
         a = self.args
         return {"rounds": self.rounds, "banks_expected": self.banks, "current_round": self.round, "done": self.done,
-                "dp": {"enabled": self.dp_on, "sigma": a.sigma if self.dp_on else 0.0, "clip_norm": a.clip, "delta": a.delta},
+                "dp": {"enabled": self.dp_on, "sigma": a.sigma if self.dp_on else 0.0, "clip_norm": a.clip, "delta": a.delta,
+                       "mode": a.dp_mode, "noise_added_by": ("bank" if a.dp_mode == "local" else "coordinator") if self.dp_on else "nobody"},
                 "defense": {"enabled": self.defense_on, "tau": a.tau, "norm_ratio": a.norm_ratio, "weight_cap_factor": a.weight_cap},
                 "round_timeout_s": a.round_timeout, "seed": a.seed, "feature_names": list(FEATURE_NAMES),
                 "feature_names_sha256": feature_names_sha256(), "n_features": N_FEATURES}
@@ -172,9 +185,12 @@ class Coordinator:
         eps = dp.epsilon_spent(a.sigma, len(self.history), a.delta) if self.dp_on else 0.0
         return {"round": len(self.history), "total_rounds": self.rounds,
                 "dp": {"enabled": self.dp_on, "sigma": a.sigma if self.dp_on else 0.0, "clip_norm": a.clip,
-                       "epsilon_spent": eps, "delta": a.delta, "epsilon_note": "approximate; analytic Gaussian mechanism, see fedaml/dp.py"},
+                       "epsilon_spent": eps, "delta": a.delta, "mode": a.dp_mode,
+                       "noise_added_by": ("bank" if a.dp_mode == "local" else "coordinator") if self.dp_on else "nobody",
+                       "epsilon_note": "approximate; update-level (per bank per round) Gaussian mechanism composed over rounds, see fedaml/dp.py"},
                 "defense": {"enabled": self.defense_on, "tau": a.tau, "norm_ratio": a.norm_ratio, "weight_cap_factor": a.weight_cap},
-                "rounds": self.history, "banks_expected": self.banks, "done": self.done, "current_round": self.round,
+                "rounds": self.history, "banks_expected": self.banks, "eval_banks": self.eval_banks,
+                "done": self.done, "current_round": self.round,
                 "waiting_for": [b for b in self.banks if b not in self.updates] if not self.done else [],
                 "seconds_per_round": round(float(np.mean(self.round_times)), 2) if self.round_times else None,
                 "total_runtime_s": round(time.time() - self.started, 1), "tag": a.tag,
@@ -228,7 +244,7 @@ class Coordinator:
         deltas = {b: np.asarray(m["delta_coef"] + m["delta_intercept"], dtype=np.float64) for b, m in updates.items()}
         n_samples = {b: int(m["n_samples"]) for b, m in updates.items()}
         missing = [b for b in self.banks if b not in updates]
-        noise_std = a.sigma * a.clip if self.dp_on else 0.0
+        noise_std = a.sigma * a.clip if (self.dp_on and a.dp_mode == "local") else 0.0
         accepted, excluded, scores = defense.screen_updates(deltas, a.clip, enabled=self.defense_on, tau=a.tau,
                                                             norm_ratio=a.norm_ratio, noise_std=noise_std)
         for b in missing:
@@ -236,6 +252,8 @@ class Coordinator:
         weights: dict[int, float] = {}
         if accepted:
             mean, weights = defense.weighted_mean({b: deltas[b] for b in accepted}, n_samples, a.weight_cap)
+            if self.dp_on and a.dp_mode == "central":
+                mean = dp.add_noise(mean, a.sigma, a.clip * max(weights.values()), self.rng)
             new_coef, new_int = self.coef + mean[:-1], self.intercept + mean[-1:]
         else:
             log.error("round %d: no accepted updates, global model unchanged", rnd)
@@ -243,7 +261,7 @@ class Coordinator:
         local_auc = {str(b): self._auc(self.coef + deltas[b][:-1], self.intercept + deltas[b][-1:]) for b in updates}
         extra = {"n_samples_claimed": {str(b): n for b, n in n_samples.items()}, "weights": {str(b): w for b, w in weights.items()},
                  "update_sha256": {str(b): m["payload_sha256"] for b, m in updates.items()}, "defense_scores": {str(b): s for b, s in scores.items()},
-                 "dp": {"enabled": self.dp_on, "sigma": a.sigma if self.dp_on else 0.0, "clip_norm": a.clip}}
+                 "dp": {"enabled": self.dp_on, "sigma": a.sigma if self.dp_on else 0.0, "clip_norm": a.clip, "mode": a.dp_mode}}
         doc = model_json(rnd, new_coef, new_int, accepted, excluded, extra)
         path = os.path.join(a.state_dir, f"global_round_{rnd}.json")
         atomic_write_json(doc, path)
@@ -253,7 +271,7 @@ class Coordinator:
                 metrics_ = self.evaluate(path)
             except Exception as exc:  # noqa: BLE001
                 log.error("evaluation failed: %s", exc)
-        per_bank_auc = {b: (None if m["auc"] is None else round(float(m["auc"]), 6)) for b, m in metrics_["per_bank"].items()}
+        per_bank_auc = {str(b): self._auc(new_coef, new_int, banks=[b]) for b in sorted(self.tests)}
         entry = {"round": rnd, "accepted": accepted, "excluded": excluded,
                  "global_auc": None if metrics_["auc"] is None else round(float(metrics_["auc"]), 6),
                  "global_ap": None if metrics_["ap"] is None else round(float(metrics_["ap"]), 6),
@@ -332,6 +350,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--sigma", type=float, default=0.8, help="noise multiplier: noise std = sigma * clip")
     p.add_argument("--clip", type=float, default=1.0, help="L2 clip norm every bank applies to its delta")
     p.add_argument("--delta", type=float, default=1e-5, help="DP delta for the epsilon report")
+    p.add_argument("--dp-mode", choices=["central", "local"], default=os.environ.get("DP_MODE", "central"),
+                   help="central: coordinator noises the aggregate (default); local: each bank noises its delta")
     p.add_argument("--defense", choices=["on", "off"], default="on")
     p.add_argument("--tau", type=float, default=0.8, help="max cosine distance to the median delta (rogue ~1-2, honest <0.7 with the prox trainer)")
     p.add_argument("--norm-ratio", type=float, default=3.0, help="max norm as a multiple of the median norm")
@@ -341,7 +361,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--state-dir", default="state")
     p.add_argument("--data-dir", default=os.environ.get("FEDAML_DATA_DIR", ""), help="dir holding banks/bank_<id>/test.csv (default data/)")
-    p.add_argument("--eval-banks", default="1,2,3,4", help="banks whose test.csv form the pooled evaluation set")
+    p.add_argument("--eval-banks", default=os.environ.get("EVAL_BANKS", "2,3,4"),
+                   help="banks whose test.csv form the pooled evaluation set (bank 1 is unlearnable with per-row features)")
     p.add_argument("--tag", default="", help="also write state/global_final_<tag>.json and state/status_<tag>.json")
     p.add_argument("--linger", type=float, default=60.0, help="seconds to keep serving after the last round")
     p.add_argument("--seed", type=int, default=42)

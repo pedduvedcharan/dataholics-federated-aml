@@ -5,8 +5,8 @@
 Per round: fetch the global logistic weights, warm-start a local logistic
 regression from them, run a bounded amount of local optimisation on this
 bank's train set with "balanced" class weights, take delta = local - global,
-L2-clip it, add Gaussian noise when the coordinator's config says DP is on,
-and send the exact CONTRACTS section 4 message through ``fedaml.egress.send``,
+L2-clip it, add Gaussian noise when the coordinator's config says DP is on in
+``local`` mode (in ``central`` mode the coordinator noises the aggregate), and send the exact CONTRACTS section 4 message through ``fedaml.egress.send``,
 the only door out of a bank. Raw rows never leave this process. Local test AUC
 is logged every round.
 
@@ -165,11 +165,12 @@ class BankClient:
         return int(len(self.y))
 
     # ----- one round
-    def build_message(self, rnd: int, vec: np.ndarray) -> dict:
+    def build_message(self, rnd: int, vec: np.ndarray, noised: bool) -> dict:
+        """The exact CONTRACTS section 4 message; ``dp`` states what THIS bank applied to the delta."""
         d = self.cfg["dp"]
         msg = {"bank_id": int(self.bank_id), "round": int(rnd), "n_samples": self.claimed_samples(),
                "delta_coef": [float(v) for v in vec[:-1]], "delta_intercept": [float(vec[-1])],
-               "clip_norm": float(d["clip_norm"]), "dp": {"enabled": bool(d["enabled"]), "sigma": float(d["sigma"])},
+               "clip_norm": float(d["clip_norm"]), "dp": {"enabled": bool(noised), "sigma": float(d["sigma"]) if noised else 0.0},
                "feature_names_sha256": feature_names_sha256(), "payload_sha256": "", "signature": None}
         msg["payload_sha256"] = payload_sha256(msg)
         return msg
@@ -186,8 +187,9 @@ class BankClient:
             global_auc = round(float(roc_auc_score(self.y_test, sigmoid_scores(self.X_test, coef, intercept))), 4)
             raw = self.local_delta(coef, intercept)
             d = self.cfg["dp"]
-            vec, info = dp.privatize(raw, d["clip_norm"], d["sigma"], bool(d["enabled"]), self.rng)
-            msg = self.build_message(rnd, vec)
+            noise_here = bool(d["enabled"]) and d.get("mode", "local") == "local"
+            vec, info = dp.privatize(raw, d["clip_norm"], d["sigma"], noise_here, self.rng)
+            msg = self.build_message(rnd, vec, noised=noise_here)
             reply = egress.send(self.url, msg, self.bank_id, rnd)
             log.info("round %d: local test AUC global=%.4f local=%.4f | delta raw_norm=%.3f sent_norm=%.3f dp=%s | %.1fs | coordinator: %s",
                      rnd, global_auc, self.local_auc, info["raw_norm"], info["sent_norm"], info["dp_enabled"],
