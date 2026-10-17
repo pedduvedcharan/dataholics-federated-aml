@@ -296,7 +296,7 @@ def markdown_table(result: dict) -> str:
                          f"| {_fmt(m['global_auc'])} | {_fmt(m['global_ap'])} |")
     c = result.get("centralized_logreg")
     if c:
-        lines.append(f"| **centralized logreg (illegal ceiling)** | all banks pooled | – | – "
+        lines.append(f"| **centralized pooling logreg** | all banks' raw rows pooled | – | – "
                      f"| {_fmt(c['auc'])} | {_fmt(c['ap'])} | {_fmt(c['global_auc'])} | {_fmt(c['global_ap'])} |")
     fed = result.get("federated")
     if fed:

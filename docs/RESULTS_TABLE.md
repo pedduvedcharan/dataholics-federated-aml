@@ -25,7 +25,7 @@ in the last column as produced on the LinuxONE VM. Replace `{{...}}` only from t
 | Bank 4 logistic regression | bank 4 only | {{B4_LR_AUC}} | {{B4_LR_AP}} | `state/baselines.json` → `per_bank.4.logreg` |
 | Bank 4 random forest | bank 4 only | {{B4_RF_AUC}} | {{B4_RF_AP}} | `state/baselines.json` → `per_bank.4.rf` (`pooled_auc`,`pooled_ap`) |
 | Bank 4 hist. gradient boosting | bank 4 only | {{B4_HGB_AUC}} | {{B4_HGB_AP}} | `state/baselines.json` → `per_bank.4.hgb` (`pooled_auc`,`pooled_ap`) |
-| **Centralized logistic regression (the illegal ceiling)** | all four banks' raw rows pooled | {{CENT_AUC}} | {{CENT_AP}} | `state/baselines.json` → `centralized_logreg` |
+| **Centralized pooling, logistic regression (not legal in practice; not an upper bound here)** | all four banks' raw rows pooled | {{CENT_AUC}} | {{CENT_AP}} | `state/baselines.json` → `centralized_logreg` |
 | **Federated logistic regression, DP off** | no row leaves any bank | {{FED_OFF_AUC}} | {{FED_OFF_AP}} | `python -m fedaml.baselines --evaluate state/global_final_dpoff.json` or `state/status_dpoff.json` → last round `global_auc`/`global_ap` |
 | **Federated logistic regression, DP on (σ={{SIGMA}}, ε≈{{EPSILON}})** | no row leaves any bank, updates clipped + noised | {{FED_ON_AUC}} | {{FED_ON_AP}} | `state/baselines.json` → `federated` (attached from `global_final_dpon.json`); ε from `state/status_dpon.json` → `dp.epsilon_spent` |
 | Federated, rogue bank 5 present, defense **off** | bank 5 sends poisoned updates | {{ROGUE_OFF_AUC}} | {{ROGUE_OFF_AP}} | `python -m fedaml.baselines --evaluate state/global_final_rogue_off.json` |
