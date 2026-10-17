@@ -8,7 +8,7 @@
 #   scripts/run_demo.sh --no-rogue      4 honest banks only: BANKS=1,2,3,4, rogue service not started (MASTER 16:20 fallback:
 #                                       the rogue scene then comes from archived DP-off files; status_rogue_on.json is NOT written)
 #
-# Knobs are the compose env vars: ROUNDS EPOCHS SIGMA DP_MODE CLIP TAU SEED BANKS EVAL_BANKS TRAINER ROGUE_ATTACK ROGUE_FACTOR ALERT_ID SAR_ENGINE.
+# Knobs are the compose env vars: ROUNDS EPOCHS SIGMA DP_MODE CLIP TAU SEED BANKS EVAL_BANKS TRAINER ROGUE_ATTACK ROGUE_FACTOR ALERT_ID SAR_ENGINE (default template) LLM_MODEL_FILE.
 # TAG is set per phase (dpoff, dpon) so the coordinator writes state/global_final_<tag>.json itself.
 # WAIT_MAX (default 1800 s) bounds each training phase. COMPOSE_EXTRA adds compose flags (e.g. "-f smoke/override.yml").
 # Both runs keep DEFENSE on so the DP off/on comparison differs in DP only (REDTEAM's request).
@@ -120,7 +120,11 @@ if [ "$DO_TOOLS" = 1 ]; then
   log "alerts (top-20 flagged chains from the DP-on model)"
   $DC run --rm alerts || log "alerts failed (exit $?)"
   log "genai (SAR for ${ALERT_ID:-A01}, engine ${SAR_ENGINE:-template})"
+  if [ "${SAR_ENGINE:-template}" = "llm" ]; then   # genai no longer depends_on llm (MASTER): start/stop it explicitly
+    log "starting llm (LLM_MODEL_FILE=${LLM_MODEL_FILE:-default})"; $DC up -d --wait llm || log "llm failed to start; sar.py falls back to template"
+  fi
   $DC run --rm genai || log "genai failed (exit $?)"
+  [ "${SAR_ENGINE:-template}" = "llm" ] && { $DC stop llm >/dev/null 2>&1 || true; }
 fi
 
 $DC stop $TRAIN_SVCS rogue >/dev/null 2>&1 || true
