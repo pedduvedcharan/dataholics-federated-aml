@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="690" viewBox="0 0 1280 690" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="13">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#2a78d6"/></marker>
+    <marker id="arrg" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#898781"/></marker>
+    <marker id="arrr" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#d03b3b"/></marker>
+    <style>
+      .box{fill:#ffffff;stroke:#c3c2b7;stroke-width:1.2;rx:8}
+      .t{fill:#0b0b0b;font-weight:600;font-size:14px}
+      .s{fill:#52514e;font-size:12px}
+      .m{fill:#898781;font-size:11px}
+      .flow{stroke:#2a78d6;stroke-width:2;fill:none;marker-end:url(#arr)}
+      .back{stroke:#898781;stroke-width:1.4;fill:none;stroke-dasharray:5 4;marker-end:url(#arrg)}
+      .read{stroke:#898781;stroke-width:1.4;fill:none;marker-end:url(#arrg)}
+      .rogue{stroke:#d03b3b;stroke-width:2;fill:none;marker-end:url(#arrr)}
+    </style>
+  </defs>
+  <rect width="1280" height="690" fill="#fcfcfb"/>
+  <text x="24" y="30" class="t" font-size="18">Cross-bank AML via federated learning — what runs where, and the single door out of a bank</text>
+  <text x="24" y="50" class="s">Team Dataholics · IBM Z Datathon 2026 · every box is a container on one LinuxONE VM; no transaction row ever crosses a box boundary</text>
+
+  <!-- banks -->
+  <g id="banks">
+    <rect x="24" y="86" width="262" height="66" class="box"/>
+    <text x="36" y="106" class="t">bank1</text><text x="36" y="124" class="s">own shard only · data/banks/bank_1 (ro)</text><text x="36" y="140" class="s">local SGD → delta → L2 clip → + noise</text>
+    <rect x="24" y="162" width="262" height="66" class="box"/>
+    <text x="36" y="182" class="t">bank2</text><text x="36" y="200" class="s">own shard only</text><text x="36" y="216" class="s">local SGD → clipped, noised delta</text>
+    <rect x="24" y="238" width="262" height="66" class="box"/>
+    <text x="36" y="258" class="t">bank3</text><text x="36" y="276" class="s">own shard only</text><text x="36" y="292" class="s">local SGD → clipped, noised delta</text>
+    <rect x="24" y="314" width="262" height="66" class="box"/>
+    <text x="36" y="334" class="t">bank4</text><text x="36" y="352" class="s">own shard only</text><text x="36" y="368" class="s">local SGD → clipped, noised delta</text>
+    <rect x="24" y="404" width="262" height="66" class="box" stroke="#d03b3b" stroke-width="1.6"/>
+    <text x="36" y="424" class="t" fill="#d03b3b">rogue (bank5) — synthetic attacker</text><text x="36" y="442" class="s">poisons its update (delta × −20, or</text><text x="36" y="458" class="s">flipped labels) to hide its own laundering</text>
+  </g>
+
+  <!-- egress gate -->
+  <rect x="330" y="86" width="150" height="384" fill="#eef4fd" stroke="#2a78d6" stroke-width="2" rx="8"/>
+  <text x="405" y="112" text-anchor="middle" class="t" fill="#1c5cab">egress.send()</text>
+  <text x="405" y="130" text-anchor="middle" class="s">the only door out</text>
+  <text x="405" y="160" text-anchor="middle" class="s">refuses raw columns</text>
+  <text x="405" y="176" text-anchor="middle" class="m">(ts, accounts, amounts…)</text>
+  <text x="405" y="198" text-anchor="middle" class="s">refuses any list longer</text>
+  <text x="405" y="214" text-anchor="middle" class="s">than one weight vector</text>
+  <text x="405" y="236" text-anchor="middle" class="s">caps the body at 64 KB</text>
+  <text x="405" y="264" text-anchor="middle" class="s">audit line per message</text>
+  <text x="405" y="280" text-anchor="middle" class="m">bytes · sha256 · keys</text>
+  <text x="405" y="304" text-anchor="middle" class="t" fill="#006300" font-size="13">rows_shared: 0</text>
+  <text x="405" y="322" text-anchor="middle" class="s">params_shared: 21</text>
+  <text x="405" y="352" text-anchor="middle" class="s">violations are logged</text>
+  <text x="405" y="368" text-anchor="middle" class="s" fill="#d03b3b">as "blocked" and raise</text>
+  <text x="405" y="400" text-anchor="middle" class="m">try_leak.py pushes</text>
+  <text x="405" y="414" text-anchor="middle" class="m">5 raw rows at it live →</text>
+  <text x="405" y="428" text-anchor="middle" class="m">blocked counter ticks up</text>
+
+  <!-- bank -> gate arrows -->
+  <line x1="286" y1="119" x2="328" y2="119" class="flow"/>
+  <line x1="286" y1="195" x2="328" y2="195" class="flow"/>
+  <line x1="286" y1="271" x2="328" y2="271" class="flow"/>
+  <line x1="286" y1="347" x2="328" y2="347" class="flow"/>
+  <line x1="286" y1="437" x2="328" y2="437" class="rogue"/>
+
+  <!-- gate -> coordinator -->
+  <line x1="480" y1="250" x2="598" y2="250" class="flow" stroke-width="3"/>
+  <text x="540" y="234" text-anchor="middle" class="s" font-weight="600">model updates only</text>
+  <text x="540" y="270" text-anchor="middle" class="m">JSON, ~750 bytes</text>
+
+  <!-- coordinator -->
+  <rect x="600" y="150" width="300" height="200" class="box"/>
+  <text x="612" y="172" class="t">coordinator  :8000</text>
+  <text x="612" y="194" class="s">FedAvg: mean of deltas weighted by n_samples</text>
+  <text x="612" y="212" class="s">new global = old + mean delta, each round</text>
+  <text x="612" y="236" class="s" font-weight="600">rogue defense</text>
+  <text x="612" y="252" class="s">norm check · cosine distance to the</text>
+  <text x="612" y="268" class="s">coordinate-wise median → exclude with reason</text>
+  <text x="612" y="292" class="s" font-weight="600">privacy accounting</text>
+  <text x="612" y="308" class="s">ε per round, Gaussian mechanism (approximate)</text>
+  <text x="612" y="332" class="m">scores global_test.csv · writes state/ atomically</text>
+  <rect x="792" y="156" width="102" height="20" rx="4" fill="#fbe9e9" stroke="#d03b3b"/>
+  <text x="843" y="170" text-anchor="middle" font-size="11" fill="#d03b3b" font-weight="600">✖ bank5 excluded</text>
+
+  <!-- global model back to banks -->
+  <path d="M750,150 C750,70 420,70 160,84" class="back"/>
+  <text x="455" y="66" text-anchor="middle" class="m">global model back to every bank (coef, intercept) — the only thing that flows in</text>
+
+  <!-- shared volumes -->
+  <rect x="600" y="400" width="300" height="70" class="box" fill="#f6f6f3"/>
+  <text x="612" y="422" class="t">shared volumes (on the VM)</text>
+  <text x="612" y="440" class="s">state/: global models, status, redteam, alerts</text>
+  <text x="612" y="456" class="s">logs/egress/: bank_&lt;id&gt;.jsonl audit trail</text>
+  <line x1="750" y1="350" x2="750" y2="398" class="read"/>
+  <path d="M405,470 L405,500 L610,500 L610,472" class="read"/>
+  <text x="500" y="494" class="m">audit lines</text>
+
+  <!-- right column -->
+  <rect x="950" y="86" width="306" height="110" class="box"/>
+  <text x="962" y="108" class="t">dashboard  :8050 — regulator view</text>
+  <text x="962" y="128" class="s">rows shared 0 · params shared · blocked attempts</text>
+  <text x="962" y="144" class="s">AUC per round vs single-bank &amp; centralized</text>
+  <text x="962" y="160" class="s">ε meter · rogue exclusions · red-team verdict</text>
+  <text x="962" y="180" class="m">reads state/ and logs/ only · via ssh -L tunnel</text>
+
+  <rect x="950" y="226" width="306" height="96" class="box"/>
+  <text x="962" y="248" class="t">attacker — our own red team</text>
+  <text x="962" y="268" class="s">membership inference against the global model</text>
+  <text x="962" y="284" class="s">same seed, DP off vs DP on → side-by-side table</text>
+  <text x="962" y="304" class="m">synthetic attack; proves the noise is doing work</text>
+
+  <rect x="950" y="352" width="306" height="96" class="box"/>
+  <text x="962" y="374" class="t">genai — SAR writer</text>
+  <text x="962" y="394" class="s">small CPU LLM (llama.cpp, s390x) drafts a</text>
+  <text x="962" y="410" class="s">Suspicious Activity Report for a flagged chain</text>
+  <text x="962" y="430" class="m">template fallback if the runtime is unavailable</text>
+
+  <!-- volumes -> right column -->
+  <path d="M900,435 L925,435 L925,141 L948,141" class="read"/>
+  <path d="M925,274 L948,274" class="read"/>
+  <path d="M925,400 L948,400" class="read"/>
+  <text x="906" y="458" class="m">read-only</text>
+
+  <!-- platform band -->
+  <rect x="24" y="530" width="1232" height="92" rx="8" fill="#eef4fd" stroke="#86b6ef"/>
+  <text x="40" y="554" class="t" fill="#1c5cab">IBM LinuxONE Community Cloud · s390x (big-endian) · 3 cores · 8 GB RAM · Ubuntu 24.04</text>
+  <text x="40" y="576" class="s">docker compose: coordinator, bank1–4, rogue, dashboard always on; attacker and genai run on demand. One image (ubuntu:24.04 + apt python3-numpy/scipy/sklearn/pandas/flask).</text>
+  <text x="40" y="594" class="s">Sandboxed containers with shared volumes ./data (read-only), ./state, ./logs. Host ports bind 127.0.0.1 only; nothing is published to the internet.</text>
+  <text x="40" y="612" class="m">Models cross containers as JSON (weights + feature names + sha256), never as pickles. Every number shown on a slide comes from a file in state/ or logs/ produced on this VM.</text>
+
+  <!-- legend -->
+  <line x1="24" y1="652" x2="56" y2="652" class="flow"/><text x="62" y="656" class="s">model update (clipped + noised delta)</text>
+  <line x1="300" y1="652" x2="332" y2="652" class="rogue"/><text x="338" y="656" class="s">poisoned update</text>
+  <line x1="470" y1="652" x2="502" y2="652" class="back"/><text x="508" y="656" class="s">global model broadcast</text>
+  <line x1="680" y1="652" x2="712" y2="652" class="read"/><text x="718" y="656" class="s">file read / write on shared volumes</text>
+  <text x="24" y="680" class="m">Not drawn: Paillier-encrypted aggregation and ML-DSA signed updates (stretch goals, only if time allows).</text>
+</svg>
