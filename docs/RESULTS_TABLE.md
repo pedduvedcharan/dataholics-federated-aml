@@ -1,45 +1,47 @@
-# Results table skeleton for the README (MODELS → MASTER)
+27 20:53 state/global_final_dpon.json
+36 20:50 state/global_final_rogue_on.json
+# Results table (generated)
 
-All AUC/AP values on the **pooled basis**: each bank's `test.csv` featurized within
-that bank, predictions pooled over the evaluation banks **2, 3, 4**
-(`fedaml.baselines.evaluate_model_pooled`, CONTRACTS §4/§6). Bank 1 (code 070, 69% of
-all rows) is kept in the per-bank rows at its own-test score to show it at chance: its
+Generated 2026-10-17 20:56 UTC on the LinuxONE VM by `python -m fedaml.results_table` from `state/`.
+Do not edit numbers by hand; rerun the command after new runs.
+
+All AUC/AP values are on the **pooled basis**: each bank's `test.csv` featurized within
+that bank, predictions pooled over the evaluation banks **2, 3, 4** (39,638 rows, 64 laundering;
+AP on 64 positives is noisy). Positives are ~1 in 1,000, so AP (average precision) is the
+number that matters; AUC is shown because judges expect it.
+
+Bank 1 (code 070, 69% of all rows) is kept at its own-test score to show it at chance: its
 laundering (cheque / card / cash from a handful of hub sender accounts, never ACH, never
-within-bank) is invisible to per-row features, for every model, so it is excluded from
-the pooled basis and the centralized model is still trained on its rows.
-Positives are ~1 in 1,000, so AP (average precision) is the number that matters;
-AUC is shown because judges expect it. Every number must be copied from the file
-in the last column as produced on the LinuxONE VM. Replace `{{...}}` only from those files.
+within-bank) is invisible to per-row features, for every model, so it is excluded from the
+pooled basis. The centralized model is still trained on its rows, which is why centralized
+pooling is not an upper bound here.
 
 | Model | Who sees the rows | AUC | AP | File of origin (on VM) |
 |---|---|---|---|---|
-| Bank 1 logistic regression (own test; at chance, see note) | bank 1 only | {{B1_LR_AUC}} | {{B1_LR_AP}} | `state/baselines.json` → `per_bank.1.logreg` (`auc`,`ap`) |
-| Bank 1 random forest (own test) | bank 1 only | {{B1_RF_AUC}} | {{B1_RF_AP}} | `state/baselines.json` → `per_bank.1.rf` (`auc`,`ap`) |
-| Bank 1 hist. gradient boosting (own test) | bank 1 only | {{B1_HGB_AUC}} | {{B1_HGB_AP}} | `state/baselines.json` → `per_bank.1.hgb` (`auc`,`ap`) |
-| Bank 2 logistic regression | bank 2 only | {{B2_LR_AUC}} | {{B2_LR_AP}} | `state/baselines.json` → `per_bank.2.logreg` |
-| Bank 2 random forest | bank 2 only | {{B2_RF_AUC}} | {{B2_RF_AP}} | `state/baselines.json` → `per_bank.2.rf` (`pooled_auc`,`pooled_ap`) |
-| Bank 2 hist. gradient boosting | bank 2 only | {{B2_HGB_AUC}} | {{B2_HGB_AP}} | `state/baselines.json` → `per_bank.2.hgb` (`pooled_auc`,`pooled_ap`) |
-| Bank 3 logistic regression | bank 3 only | {{B3_LR_AUC}} | {{B3_LR_AP}} | `state/baselines.json` → `per_bank.3.logreg` |
-| Bank 3 random forest | bank 3 only | {{B3_RF_AUC}} | {{B3_RF_AP}} | `state/baselines.json` → `per_bank.3.rf` (`pooled_auc`,`pooled_ap`) |
-| Bank 3 hist. gradient boosting | bank 3 only | {{B3_HGB_AUC}} | {{B3_HGB_AP}} | `state/baselines.json` → `per_bank.3.hgb` (`pooled_auc`,`pooled_ap`) |
-| Bank 4 logistic regression | bank 4 only | {{B4_LR_AUC}} | {{B4_LR_AP}} | `state/baselines.json` → `per_bank.4.logreg` |
-| Bank 4 random forest | bank 4 only | {{B4_RF_AUC}} | {{B4_RF_AP}} | `state/baselines.json` → `per_bank.4.rf` (`pooled_auc`,`pooled_ap`) |
-| Bank 4 hist. gradient boosting | bank 4 only | {{B4_HGB_AUC}} | {{B4_HGB_AP}} | `state/baselines.json` → `per_bank.4.hgb` (`pooled_auc`,`pooled_ap`) |
-| **Centralized pooling, logistic regression (not legal in practice; not an upper bound here)** | all four banks' raw rows pooled | {{CENT_AUC}} | {{CENT_AP}} | `state/baselines.json` → `centralized_logreg` |
-| **Federated logistic regression, DP off** | no row leaves any bank | {{FED_OFF_AUC}} | {{FED_OFF_AP}} | `python -m fedaml.baselines --evaluate state/global_final_dpoff.json` or `state/status_dpoff.json` → last round `global_auc`/`global_ap` |
-| **Federated logistic regression, DP on (σ={{SIGMA}}, ε≈{{EPSILON}})** | no row leaves any bank, updates clipped + noised | {{FED_ON_AUC}} | {{FED_ON_AP}} | `state/baselines.json` → `federated` (attached from `global_final_dpon.json`); ε from `state/status_dpon.json` → `dp.epsilon_spent` |
-| Federated, rogue bank 5 present, defense **off** | bank 5 sends poisoned updates | {{ROGUE_OFF_AUC}} | {{ROGUE_OFF_AP}} | `python -m fedaml.baselines --evaluate state/global_final_rogue_off.json` |
-| Federated, rogue bank 5 present, defense **on** | bank 5 detected and excluded | {{ROGUE_ON_AUC}} | {{ROGUE_ON_AP}} | `python -m fedaml.baselines --evaluate state/global_final_rogue_on.json`; exclusions in `state/status.json` → `rounds[*].excluded` |
+| Bank 1 logistic regression (own test; at chance, see note) | bank 1 only | 0.530 | 0.002 | `state/baselines.json` → `per_bank.1.logreg` (`auc`, `ap`: own test) |
+| Bank 1 random forest (own test; at chance, see note) | bank 1 only | 0.539 | 0.002 | `state/baselines.json` → `per_bank.1.rf` (`auc`, `ap`: own test) |
+| Bank 1 hist. gradient boosting (own test; at chance, see note) | bank 1 only | 0.522 | 0.001 | `state/baselines.json` → `per_bank.1.hgb` (`auc`, `ap`: own test) |
+| Bank 2 logistic regression | bank 2 only | 0.985 | 0.216 | `state/baselines.json` → `per_bank.2.logreg` (`pooled_auc`, `pooled_ap`) |
+| Bank 2 random forest | bank 2 only | 0.918 | 0.230 | `state/baselines.json` → `per_bank.2.rf` (`pooled_auc`, `pooled_ap`) |
+| Bank 2 hist. gradient boosting | bank 2 only | 0.849 | 0.269 | `state/baselines.json` → `per_bank.2.hgb` (`pooled_auc`, `pooled_ap`) |
+| Bank 3 logistic regression | bank 3 only | 0.978 | 0.077 | `state/baselines.json` → `per_bank.3.logreg` (`pooled_auc`, `pooled_ap`) |
+| Bank 3 random forest | bank 3 only | 0.980 | 0.308 | `state/baselines.json` → `per_bank.3.rf` (`pooled_auc`, `pooled_ap`) |
+| Bank 3 hist. gradient boosting | bank 3 only | 0.784 | 0.211 | `state/baselines.json` → `per_bank.3.hgb` (`pooled_auc`, `pooled_ap`) |
+| Bank 4 logistic regression | bank 4 only | 0.986 | 0.345 | `state/baselines.json` → `per_bank.4.logreg` (`pooled_auc`, `pooled_ap`) |
+| Bank 4 random forest | bank 4 only | 0.979 | 0.341 | `state/baselines.json` → `per_bank.4.rf` (`pooled_auc`, `pooled_ap`) |
+| Bank 4 hist. gradient boosting | bank 4 only | 0.882 | 0.405 | `state/baselines.json` → `per_bank.4.hgb` (`pooled_auc`, `pooled_ap`) |
+| **Centralized pooling, logistic regression** (not legal in practice; not an upper bound here) | all four banks' raw rows pooled | 0.983 | 0.088 | `state/baselines.json` → `centralized_logreg` |
+| **Federated logistic regression, DP off** | no row leaves any bank | 0.988 | 0.152 | `python -m fedaml.results_table` scores `state/global_final_dpoff.json` |
+| **Federated logistic regression, DP on (σ=0.3, ε≈99.7, δ=1e-05, approximate)** | no row leaves any bank; updates clipped + noised | 0.970 | 0.056 | `python -m fedaml.results_table` scores `state/global_final_dpon.json`; ε from `state/status_dpon.json` → `dp.epsilon_spent` |
+| **Federated, rogue bank 5 present, defense off** | bank 5 sends poisoned updates | 0.500 | 0.002 | `python -m fedaml.results_table` scores `state/global_final_rogue_off.json`; exclusions in `state/status_rogue_off.json` → `rounds[*].excluded` |
+| **Federated, rogue bank 5 present, defense on** | bank 5 detected and excluded | 0.989 | 0.182 | `python -m fedaml.results_table` scores `state/global_final_rogue_on.json`; exclusions in `state/status_rogue_on.json` → `rounds[*].excluded` |
 
-Two sentences for the slide (fill after the VM run):
-- "The best any single bank can do alone is {{BEST_SINGLE_MODEL}} at AP {{BEST_SINGLE_AP}}; pooling raw data would reach AP {{CENT_AP}}, but that pooling is what regulators shut down."
-- "The federated model reaches AP {{FED_ON_AP}} with differential privacy on, without a single transaction leaving a bank; the rogue bank drops it to {{ROGUE_OFF_AP}} until the defense excludes it ({{ROGUE_ON_AP}})."
+Reading (results line on the slide): federated without DP matches the best single bank on AUC
+and beats centralized pooling on AP; DP costs about 0.02 AUC and 0.10 AP, the measured price of
+the privacy guarantee the red-team table demonstrates; the rogue bank breaks the model to chance
+and the defense fully restores it. ε is approximate, update-level, and a weak formal guarantee at
+this size; the red-team table carries the privacy claim.
 
-Control column (not for the README table, for the red-team write-up): the same models
-scored on `data/global_test.csv` are in `global_auc` / `global_ap` next to each entry.
-They read lower because that file's within-frame account aggregates are computed on a
-200k mixed-bank sample, not a 500k single-bank file.
-
-FEDERATION: the file names `global_final_dpoff.json`, `global_final_dpon.json`,
-`global_final_rogue_off.json`, `global_final_rogue_on.json` are a proposal;
-tell MODELS/MASTER if your runs write different names.
+Control (not in this table): every entry in `state/baselines.json` also carries `global_auc` /
+`global_ap` on `data/global_test.csv`, the red team's distribution-shift control. They read lower
+because that file's within-frame account aggregates come from a 200k mixed-bank sample.
