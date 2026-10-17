@@ -16,7 +16,8 @@ log = logging.getLogger("fedaml.llm.narrate")
 SYSTEM_PROMPT = (
     "You are a senior anti-money-laundering compliance analyst writing the narrative of a "
     "Suspicious Activity Report. Write in formal, neutral English. Never state that a crime "
-    "occurred; describe indicators and recommend review. Never write an account number, amount, date, "
+    "occurred and never say the payment is, or is likely to be, money laundering: the alert is only ranked for "
+    "analyst review. Describe indicators, name the typology it resembles, and recommend review. Never write an account number, amount, date, "
     "bank id or statistic; the report's code inserts those. Treat the transaction as high-risk: the cross-bank model ranked it "
     "among the most suspicious in the sample, and your recommendation is always to review it. Do not repeat "
     "sentences. Answer with the ASSESSMENT paragraph only."
@@ -53,6 +54,11 @@ def _norm(s: str) -> str:
     return re.sub(r"\W+", " ", s).strip().lower()
 
 
+# Sentences that turn "ranked for review" into a verdict are dropped (MASTER wording rule, Oct 17 16:26).
+VERDICT = re.compile(r"\b(likelihood|likely|probabl\w*|evidence|proves?|confirm\w*)\b[^.]*\blaundering\b|"
+                     r"\b(is|was|constitutes|consistent with|indicat\w*)\s+(a\s+)?(case\s+of\s+)?money laundering\b", re.I)
+
+
 def parse_response(text: str) -> dict[str, str]:
     """Extract the ``ASSESSMENT:`` paragraph (label optional). Raises ValueError on unusable output."""
     m = re.search(r"ASSESSMENT\s*:\s*(.+)", text, flags=re.S | re.I)
@@ -60,6 +66,7 @@ def parse_response(text: str) -> dict[str, str]:
     body = re.split(r"\n\s*\n|\n\s*(?:Example|ASSESSMENT)\b", body, flags=re.I)[0].strip()
     body = _dedupe_sentences(" ".join(body.split()))
     body = _drop_copied(body, EXAMPLE.replace("ASSESSMENT:", ""))
+    body = " ".join(x for x in re.split(r"(?<=[.!?])\s+", body) if not VERDICT.search(x)).strip()
     if not body:
         raise ValueError("empty LLM assessment (after removing sentences copied from the example)")
     return {"assessment": body}
