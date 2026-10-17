@@ -58,7 +58,7 @@ services:
       --eval-banks ${EVAL_BANKS:-2,3,4}
       --dp ${DP:-on}
       --dp-mode ${DP_MODE:-local}
-      --sigma ${SIGMA:-0.3}
+      --sigma ${SIGMA:-0.5}
       --clip ${CLIP:-1.0}
       --defense ${DEFENSE:-on}
       --tau ${TAU:-1.5}
@@ -66,7 +66,8 @@ services:
       --tag "${TAG:-}"
       --seed ${SEED:-42}
     # No-rogue run: BANKS=1,2,3,4 docker compose up --scale rogue=0
-    # DP_MODE local (MASTER 16:20): banks add the noise BEFORE egress.send, so the coordinator never sees an un-noised update.
+    # DP_MODE local (MASTER): banks add the noise BEFORE egress.send, so the coordinator never sees an un-noised update.
+    # SIGMA 0.5 (MASTER 16:10 CDT): at mu 0.1 the auditing game leaks at sigma 0.3 (attack AUC 0.551 on bank 3); sigma 0.5 is protected (0.517).
     #   central (DP-FedAvg) is available but is not the story: REDTEAM's auditing game shows the coordinator reads membership at AUC 0.86-0.94 from un-noised updates.
     # EVAL_BANKS default 2,3,4 (MASTER 15:55): bank 1 trains but is unlearnable with per-row features; reported per bank only.
     ports:
