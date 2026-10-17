@@ -125,8 +125,9 @@ services:
     <<: *common
     container_name: genai
     profiles: ["tools"]
-    # SAR writer. Usage: ALERT_ID=<id> docker compose run --rm genai   (SAR_ENGINE=llm|template, default template)
-    command: python3 -m fedaml.sar --alert-id ${ALERT_ID:?set ALERT_ID=<alert id from state/alerts.json>} --engine ${SAR_ENGINE:-template}
+    # SAR writer. Usage: ALERT_ID=A07 docker compose run --rm genai   (ids A01..A20 from state/alerts.json; SAR_ENGINE=llm|template)
+    # NOTE: no `${VAR:?}` guards anywhere: compose interpolates the whole file before applying profiles, so a guard breaks `docker compose up`.
+    command: python3 -m fedaml.sar --alert-id ${ALERT_ID:-A01} --engine ${SAR_ENGINE:-template}
     # GENAI 12:50 scaffold (fedaml/llm): talks to a llama.cpp `llama-server` over HTTP; never imports torch.
     # The server runs on the VM host (built from source, big-endian GGUF), so the container reaches it via host-gateway.
     environment:
@@ -148,6 +149,14 @@ services:
     # Per-bank LogReg / RF / HGB comparison + centralized ceiling -> state/baselines.json (MODELS)
     command: python3 -m fedaml.baselines --banks ${BANKS_BASELINE:-1,2,3,4} --seed ${SEED:-42}
     # MODELS 12:50: flags confirmed (--banks --seed --max-rows 500000 --n-jobs 2 --federated-model <json>).
+
+  alerts:
+    <<: *common
+    container_name: alerts
+    profiles: ["tools"]
+    # Top-20 flagged chains from the final global model -> state/alerts.json (MODELS, consumed by genai)
+    command: python3 -m fedaml.alerts --model ${ALERTS_MODEL:-state/global_final.json} --top 20 --seed ${SEED:-42}
+    # TODO(MODELS): confirm `python3 -m fedaml.alerts` is the entrypoint (commit c9bea59 mentions a --alerts flag).
 
   tryleak:
     <<: *common
