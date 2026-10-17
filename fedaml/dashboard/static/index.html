@@ -263,8 +263,8 @@ function renderTraining(s) {
     const cl = bl.centralized_logreg || {};
     const c = typeof cl.auc === 'number' ? cl.auc : cl.pooled_auc;   // MODELS: centralized .auc IS the pooled number
     if (typeof c === 'number') {
-      datasets.push({ label: 'Centralized ceiling', data: flat(c), borderColor: css('--s2'), borderWidth: 1.5, pointRadius: 0, borderDash: [6, 4], endLabel: f3(c) });
-      legend.push({ c: css('--s2'), t: 'centralized logreg ceiling (illegal pooling) ' + f3(c) });
+      datasets.push({ label: 'Centralized pooling logreg (all banks\' raw rows)', data: flat(c), borderColor: css('--s2'), borderWidth: 1.5, pointRadius: 0, borderDash: [6, 4], endLabel: f3(c) });
+      legend.push({ c: css('--s2'), t: 'centralized pooling logreg (all banks\' raw rows) ' + f3(c) });
     }
     const fd = bl.federated || {};
     const fv = typeof fd.auc === 'number' ? fd.auc : fd.pooled_auc;
