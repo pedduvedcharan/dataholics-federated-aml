@@ -40,7 +40,8 @@ Speed drops sharply under contention: during a parallel Docker build, Qwen 0.5B 
 
 ## How a SAR is produced
 1. `python -m fedaml.alerts` scores `data/global_test.csv` with `state/global_final.json` using the same
-   sigmoid as `fedaml.baselines.predict_proba_json`. It keeps the top 20 and gathers each chain: the trigger,
+   sigmoid as `fedaml.baselines.predict_proba_json`, with `log_amt` capped for ranking (see "The alert queue").
+   It skips same-account transfers and single-bank chains, keeps the top 20 and gathers each chain: the trigger,
    the sender's other payments and the receiver's onward payments, at most 10 rows. It adds the banks involved
    (labelled with federation ids from `data/bank_map.json`) and the top-5 contributions. Output `state/alerts.json`.
 2. `python -m fedaml.sar --alert-id A01` fills the fixed outline with code (template sentences built from the
@@ -63,25 +64,56 @@ Speed drops sharply under contention: during a parallel Docker build, Qwen 0.5B 
   times out, if the output is empty, if it repeats the prompt's instructions, if it is under 25 words once
   sentences copied from the one-shot example are removed, if it contains an unknown placeholder, or if it
   contains anything shaped like an account id (hex of 6+ characters or 7+ digits) that is not in the alert.
+- Sentences in which the LLM calls the activity laundering ("likely", "consistent with money laundering", ...)
+  are removed before the length check: alerts are ranked for review, never declared laundering.
 - The footer always states the engine and, on fallback, the reason.
 - The finished document is post-checked for account ids against the alert record whatever the engine.
 - `--engine template` never touches the network and always works. It is a legitimate deliverable. The module's
   CLI defaults to `llm`; the compose `genai` service defaults to `template`, so pass `SAR_ENGINE=llm` there.
 
-## Measured on the VM (real data)
-Interim model `state/global_final.json`, round 5, banks 1–2; `state/sar/_runs.jsonl`.
+## The alert queue (final DP-on model, measured on the VM)
+Model `state/global_final.json` = `global_final_dpon.json`, round 10, sha256 `16ef90c0…`, scored on
+`data/global_test.csv` (200,000 rows, 354 labelled laundering, prevalence 0.177%). Alerts are **ranked for
+analyst review**; they are not detected laundering. Source: `state/alerts.json` → `meta`.
 
-| Alert | Engine | LLM seconds | Completion tokens | Assessment words |
-|---|---|---|---|---|
-| A01 | llm (Qwen 0.5B) | 13.3 | 141 | 100 |
-| A02 | llm (Qwen 0.5B) | 8.6 | 159 | 83 |
-| A03 | llm (Qwen 0.5B) | 9.6 | 141 | 100 |
-| A04 | template | under 1 s | none | none |
+Labelled-laundering triggers among the top k (`meta.ablation_true_laundering_at_k`):
 
-- Building `state/alerts.json` from 200,000 rows: 2.1 s, 203 MB peak RSS.
-- `llm` container: healthy 7 s after `docker compose up -d llm`. 124 MB RSS for 0.5B and 661 MB for 1.5B per
-  `docker stats`; the GGUF is memory-mapped, so add its size in page cache.
-- SAR process (client side): 74 MB peak RSS.
+| Ranking rule | Top 20 | Top 50 | Top 100 |
+|---|---|---|---|
+| (a) Raw model score | 0 | 2 | 4 |
+| (b) Filters only: drop same-account transfers, require ≥ 2 banks in the chain | 0 | 3 | 4 |
+| (c) **`log_amt` cap + filters (used)** | **2** | **3** | **7** |
+
+- Under (c), top-20 precision is 2/20 = 10%, about 56× the 0.177% base rate. Top-100 precision is 7%.
+- While ranking the queue, the filters removed 56 same-account transfers and 6 single-bank chains. The sample
+  holds 4,287 same-account rows, of which 2 are laundering.
+- **Why the raw top is empty.** `log_amt` is the log of the amount in the payment's own currency, and the DP-on
+  model's largest positive weight is `fmt_ACH` (+2.29). Nominally huge ACH payments in Rupee, Ruble, Yen or Yuan
+  (0.2–7.6 billion) therefore saturate the score at 0.99999.
+- **The cap.** MODELS' `fedaml.features.cap_for_alerts` clips `log_amt` at log1p(10,000,000), a fixed domain
+  constant and not a statistic of any bank's data. It is applied to ranking and to the SAR's contribution table
+  only. **It is a post-hoc ranking rule, chosen after we saw the saturation, and evaluated on the same data**, so
+  the numbers above are optimistic for unseen data. Model AUC/AP are unchanged because they are reported on raw
+  features. The real fix is converting amounts to USD before the log, which needs retraining (future work).
+- **Demo alert.** `meta.demo_alert_id` = **A06**, the highest-ranked alert whose trigger is labelled laundering in
+  the synthetic data. It is a 10.8 M Euro ACH payment in a 3-row chain across 4 banks. The scene says: "a true
+  positive from the queue ranked for analyst review, rank 6; the queue's top-20 precision is 2 in 20."
+
+## Recorded demo SARs (Qwen2.5-1.5B, via `docker compose run --rm genai`)
+From `state/sar/_runs.jsonl`. "Wall" includes the `docker compose run` container start.
+
+| Alert | Trigger labelled laundering? | LLM seconds | Wall seconds | Completion tokens | Assessment words |
+|---|---|---|---|---|---|
+| A06 (demo) | yes | 29.5 | 30.4 | 80 | 50 |
+| A07 | no | 30.7 | 31.6 | 160 | 72 |
+| A08 | no | 20.7 | 21.6 | 144 | 94 |
+
+- The `llm` container (1.5B) was healthy 6 s after `docker compose up -d --wait llm`, at about 200 MB RSS plus the
+  memory-mapped 1.8 GiB GGUF.
+- Qwen 0.5B on the same prompt: 8.6–13.3 s per SAR. The template engine takes under 1 s.
+- Building `state/alerts.json` on 200k rows took 5.9 s in its container, including the three-way comparison.
+- Every SAR states its trigger's ground-truth label and its rank in the review queue. The footer says the alert
+  was ranked for analyst review and is not a finding of laundering.
 
 ## Container
 ```
@@ -116,8 +148,9 @@ docker compose stop llm
 - The assessment is narration by a 0.5–1.5 B parameter model. It reads fluently but can overstate or
   misattribute a reason, for example calling a sender frequent when the sample shows no other payments. The
   facts it might contradict sit directly above it, written by code. It never changes a score, an id or a number.
-- The interim alerts come from a round-5, two-bank model. None of the top 20 triggers is labelled laundering in
-  the synthetic ground truth, and some chains are a single row because `global_test.csv` is a 200k sample.
-  Regenerate after the final federated run.
+- The review queue is noisy: 2 of the top 20 triggers are labelled laundering, consistent with the DP-on
+  model's AP of about 0.065. Some chains are a single row because `global_test.csv` is a 200k sample.
+- The verdict filter drops LLM sentences that call an alert laundering. Even so, the paragraph can misstate
+  activity. In A06 it says the sender "rarely transacts" while the chain shows two other payments.
 - Data are synthetic (IBM AML HI-Small). The outline follows a SAR narrative but is not a legal filing.
 - Speed numbers are single runs on one shared VM.
