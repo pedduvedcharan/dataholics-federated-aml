@@ -53,12 +53,15 @@ def featurize(df: pd.DataFrame) -> tuple[np.ndarray, list[str]]:
 
 
 def _read(path: Path) -> pd.DataFrame:
+    """Read a bank/global CSV with MODELS' safe dtypes (account ids stay strings)."""
+    from fedaml.features import read_csv
     log.info("reading %s", path)
-    return pd.read_csv(path)
+    return read_csv(path)
 
 
 def _labels(df: pd.DataFrame) -> np.ndarray:
-    return df["is_laundering"].to_numpy().astype(np.int8)
+    from fedaml.features import labels
+    return labels(df)
 
 
 def _after_window(pool: pd.DataFrame, train: pd.DataFrame) -> np.ndarray:
