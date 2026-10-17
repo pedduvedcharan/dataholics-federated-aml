@@ -60,6 +60,35 @@ def local_update(X: np.ndarray, y: np.ndarray, start: np.ndarray, epochs: int, e
     return np.r_[clf.coef_.ravel(), clf.intercept_] - start
 
 
+def prox_update(X: np.ndarray, y: np.ndarray, start: np.ndarray, class_w: dict, mu: float = 0.5,
+                C: float = 1.0, local_iters: int = 50) -> np.ndarray:
+    """FEDERATION's default trainer (fedaml.bank prox, read-only reuse): delta = prox optimum - global."""
+    from types import SimpleNamespace
+    from fedaml.bank import BankClient as Bank
+    shim = SimpleNamespace(args=SimpleNamespace(mu=mu, C=C, local_iters=local_iters), class_weight=class_w)
+    return Bank.prox_solve(shim, start.copy(), X, y) - start
+
+
+def raw_updates(X: np.ndarray, y: np.ndarray, canary: np.ndarray, start: np.ndarray, trials: int, trainer: str,
+                subsample: float, epochs: int, eta: float, seed: int) -> dict[str, np.ndarray]:
+    """Pre-noise updates for both worlds. Trial t uses the same seeded subsample of the bank's
+    other rows in both worlds (the attacker does not know which rows those are), so IN and OUT
+    differ only by the target row."""
+    w = compute_class_weight("balanced", classes=np.array([0, 1]), y=y)
+    cw = {0: float(w[0]), 1: float(w[1])}
+    rng = np.random.default_rng(seed)
+    ups = {"in": [], "out": []}
+    for t in range(trials):
+        keep = rng.random(len(y)) < subsample if subsample < 1 else np.ones(len(y), dtype=bool)
+        Xo, yo = X[keep], y[keep]
+        for world, (Xa, ya) in (("in", (np.vstack([Xo, canary[None, :]]), np.r_[yo, 1])), ("out", (Xo, yo))):
+            if trainer == "prox":
+                ups[world].append(prox_update(Xa, ya, start, cw))
+            else:
+                ups[world].append(local_update(Xa, ya, start, epochs, eta, cw, seed + 1000 + t))
+    return {k: np.array(v) for k, v in ups.items()}
+
+
 def clopper_pearson_eps(tp: int, n_in: int, fp: int, n_out: int, dp_delta: float = 1e-5,
                         conf: float = 0.95) -> float:
     """Empirical epsilon lower bound: ln((TPR_lo - delta) / FPR_hi), 0 when not significant."""
@@ -71,20 +100,12 @@ def clopper_pearson_eps(tp: int, n_in: int, fp: int, n_out: int, dp_delta: float
     return max(0.0, math.log((tpr_lo - dp_delta) / fpr_hi))
 
 
-def play(X: np.ndarray, y: np.ndarray, canary: np.ndarray, start: np.ndarray, sigma: float, clip: float,
-         trials: int, epochs: int, eta: float, seed: int) -> dict:
-    """Run the IN/OUT game `trials` times per world and score a projection attack."""
-    w = compute_class_weight("balanced", classes=np.array([0, 1]), y=y)
-    cw = {0: float(w[0]), 1: float(w[1])}
-    X_in, y_in = np.vstack([X, canary[None, :]]), np.r_[y, 1]
-    rng = np.random.default_rng(seed)
-    ups = {"in": [], "out": []}
-    for t in range(trials):
-        for world, (Xa, ya) in (("in", (X_in, y_in)), ("out", (X, y))):
-            raw = local_update(Xa, ya, start, epochs, eta, cw, seed + 1000 + t)
-            sent, _ = dp.privatize(raw, clip, sigma, sigma > 0, rng)
-            ups[world].append(sent)
-    U_in, U_out = np.array(ups["in"]), np.array(ups["out"])
+def play(raw: dict[str, np.ndarray], sigma: float, clip: float, seed: int) -> dict:
+    """Clip + noise the precomputed updates with fedaml.dp.privatize, then score a projection attack."""
+    rng = np.random.default_rng(seed + int(sigma * 1000))
+    U_in = np.array([dp.privatize(u, clip, sigma, sigma > 0, rng)[0] for u in raw["in"]])
+    U_out = np.array([dp.privatize(u, clip, sigma, sigma > 0, rng)[0] for u in raw["out"]])
+    trials = len(U_in)
     half = trials // 2
     direction = U_in[:half].mean(0) - U_out[:half].mean(0)
     direction /= np.linalg.norm(direction) + 1e-12
@@ -100,7 +121,8 @@ def play(X: np.ndarray, y: np.ndarray, canary: np.ndarray, start: np.ndarray, si
            "attack_auc_ci90": _bootstrap_auc_ci(s, m, seed), "tpr": tp / len(s_in), "fpr": fp / len(s_out),
            "eps_empirical_lower_95": clopper_pearson_eps(tp, len(s_in), fp, len(s_out)),
            "eps_accountant_1round": dp.epsilon_spent(sigma, 1) if sigma > 0 else None,
-           "raw_update_norm_mean": None}
+           "raw_update_norm_mean": float(np.linalg.norm(raw["out"], axis=1).mean()),
+           "raw_in_minus_out_norm_mean": float(np.linalg.norm(raw["in"] - raw["out"], axis=1).mean())}
     res["verdict"] = verdict(res)
     return res
 
@@ -120,6 +142,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--sigmas", default="0,0.3,0.5,0.8")
     ap.add_argument("--clip", type=float, default=1.0)
     ap.add_argument("--trials", type=int, default=120, help="per world (IN and OUT)")
+    ap.add_argument("--trainer", choices=["prox", "sgd"], default="prox", help="prox = FEDERATION's default bank trainer")
+    ap.add_argument("--subsample", type=float, default=0.9,
+                    help="fraction of the bank's other rows used per trial (attacker uncertainty); 1.0 = attacker knows them all")
     ap.add_argument("--epochs", type=int, default=1)
     ap.add_argument("--eta", type=float, default=1e-3)
     ap.add_argument("--data-dir", default="data")
@@ -141,14 +166,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         m = load_model(args.start_model)
         start = np.r_[m["coef"], m["intercept"]]
     idx, canary = pick_canary(X_te, y_te, start)
+    raw = raw_updates(X, y, canary, start, args.trials, args.trainer, args.subsample, args.epochs, args.eta, args.seed)
     rows = {}
     for sg in [float(s) for s in args.sigmas.split(",")]:
-        rows[f"DP off" if sg == 0 else f"DP on σ={sg}"] = play(X, y, canary, start, sg, args.clip, args.trials,
-                                                             args.epochs, args.eta, args.seed)
+        rows["DP off" if sg == 0 else f"DP on σ={sg}"] = play(raw, sg, args.clip, args.seed)
     seconds = time.time() - t0
     report = {"attack": "dp_audit_canary", "bank": args.bank, "target_row": f"bank_{args.bank} test.csv laundering row #{idx}",
               "target_row_txn": {k: str(v) for k, v in te.iloc[idx].items() if k not in ("from_acct", "to_acct")},
-              "start_model": args.start_model or "zeros (round 1)", "rows": rows, "seed": args.seed,
+              "start_model": args.start_model or "zeros (round 1)", "trainer": args.trainer,
+              "subsample": args.subsample, "rows": rows, "seed": args.seed,
               "runtime_s": round(seconds, 1), "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     write_json_atomic(args.out, report)
     print(f"{'setting':<14}{'attack acc':>11}{'attack AUC':>11}  {'90% CI':<13}{'TPR':>6}{'FPR':>6}{'emp. ε ≥':>10}{'acct ε (1 rd)':>15}   verdict")
@@ -158,7 +184,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"{name:<14}{r['attack_acc']:>11.3f}{r['attack_auc']:>11.3f}  {ci:<13}{r['tpr']:>6.2f}{r['fpr']:>6.2f}"
               f"{r['eps_empirical_lower_95']:>10.2f}{acct:>15}   {r['verdict']}")
     print(f"\ngame: bank {args.bank} round update with vs without one held-out laundering row (#{idx}); "
-          f"{args.trials} trials per world, half to calibrate | clip {args.clip} | seed {args.seed} | {seconds:.1f}s | wrote {args.out}")
+          f"{args.trials} trials per world, half to calibrate | trainer {args.trainer}, subsample {args.subsample} | clip {args.clip} | seed {args.seed} | {seconds:.1f}s | wrote {args.out}")
     return 0
 
 
