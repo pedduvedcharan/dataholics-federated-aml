@@ -79,6 +79,15 @@ wait_final() {  # $1 = epoch the phase started
   done
 }
 
+capture_ps() {  # text "screenshot" of docker ps + docker stats WHILE banks train (judging criterion 3)
+  local out="$1" t0; t0=$(date +%s)
+  until [ "$(docker ps --format '{{.Names}}' | grep -cE '^bank[1-4]$')" -ge 2 ] || [ $(( $(date +%s) - t0 )) -gt 60 ]; do sleep 1; done
+  sleep 4   # let the banks get into local training
+  { echo "# captured $(date -u +%FT%TZ) during training ($(uname -m), $(nproc) cpus)"
+    echo "\$ docker ps"; docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"; echo
+    echo "\$ docker stats --no-stream"; docker stats --no-stream; } > "$out" 2>&1
+}
+
 run_phase() {  # $1 = tag (dpoff|dpon), $2 = DP value
   local tag="$1" dp="$2" t; t=$(date +%s)
   local coord_cmd; coord_cmd=$(DP="$dp" TAG="$tag" $DC config --format json 2>/dev/null | python3 -c "import json,sys; print(' '.join(json.load(sys.stdin)['services']['coordinator']['command']))" 2>/dev/null)
@@ -86,8 +95,11 @@ run_phase() {  # $1 = tag (dpoff|dpon), $2 = DP value
   log "phase $tag: DP=$dp DP_MODE=${DP_MODE:-<compose default>} SIGMA=${SIGMA:-<compose default>} MU=${MU:-<compose default>} DEFENSE=on ROUNDS=${ROUNDS:-10} BANKS=${BANKS:-1,2,3,4,5} EVAL_BANKS=${EVAL_BANKS:-2,3,4} rogue=$([ "$DO_ROGUE" = 1 ] && echo on || echo off)"
   $DC rm -fs $TRAIN_SVCS rogue >/dev/null 2>&1 || true
   DP="$dp" DEFENSE=on TAG="$tag" $DC up -d $TRAIN_SVCS dashboard || die "docker compose up failed"
+  local cap_pid=""
+  if [ "$tag" = "dpon" ]; then capture_ps submission/screenshots/02_docker_ps.txt & cap_pid=$!; fi
   sleep 3
   wait_final "$t"
+  [ -n "$cap_pid" ] && wait "$cap_pid" 2>/dev/null
   log "phase $tag finished in $(( $(date +%s) - t ))s"
   # compose passes TAG to the coordinator (--tag) which writes these itself; copy only if it did not
   [ -f "state/global_final_${tag}.json" ] || cp state/global_final.json "state/global_final_${tag}.json"
@@ -107,9 +119,6 @@ PY
 run_phase dpon on
 [ "$DO_ROGUE" = 1 ] && cp state/status.json state/status_rogue_on.json   # defense on: rogue exclusions visible to the dashboard
 
-# screenshots (text) while the training containers still exist
-{ echo "\$ docker ps"; docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"; echo;
-  echo "\$ docker stats --no-stream"; docker stats --no-stream; } > submission/screenshots/02_docker_ps.txt 2>&1
 
 if [ "$DO_TOOLS" = 1 ]; then
   log "tryleak: 5 raw rows through egress.send must be BLOCKED (coordinator is still lingering)"

@@ -14,7 +14,7 @@
 | Agent | State | Last update | Next deliverable |
 |---|---|---|---|
 | MASTER | active | 16:00 CDT | gate at ~16:15; start message to INFRA on GO; all-clear to GENAI after training; then fill footprint + SAR numbers, rehearsals, video plan |
-| INFRA | smoke test PASS (ee1701f: 3 rounds 11 s, healthcheck ok, egress rows_shared 0, run_demo.sh, footprint.json keys complete, ART in image) | 15:45 (MASTER) | rebuild `fedaml:latest` from HEAD now (FEDERATION committed); switch `run_demo.sh` to `TAG=`; be ready with `footprint.sh start` for the 17:30 real run; screenshots pass 1 |
+| INFRA | integration run DONE | 16:15 CDT | `run_demo.sh --no-rogue` on real data 21:10:56–21:13:04 UTC, exit 0, 127 s; footprint in `state/footprint.json`; report below. Next: screenshot pass 1 during a live run, footprint for the video run |
 | MODELS | **final baselines on VM with headline DP-on federated row** (`state/baselines.json`, 51.9 s) | 16:00 | README numbers with P1; on call |
 | FEDERATION | cumulative-cosine rule committed (bd87b9a); dpon/rogue_on/rogue_off final on VM | 16:00 CDT (MASTER) | regenerate `dpoff` under the new rule, confirm files final with bank-1 accepted counts, free port 8000, README paragraph (trainer, cap, defense rule, DP mode, privacy-vs-robustness) |
 | REDTEAM | on hold for the post-integration rerun (MASTER pings) | 16:25 | **μ 0.1 finding:** auditing game on bank 3 at μ 0.1 gives σ 0.3 → attack AUC 0.551 [0.53–0.57] WEAK LEAK; σ 0.5 → 0.517 PROTECTED; DP off 0.994. Recommend σ 0.5 for the DP-on demo run if μ = 0.1. Game now uses the banks' μ (env MU, default 0.1) |
@@ -45,6 +45,19 @@ SSH alias `dataholics` added to `~/.ssh/config` on the lead's Mac; key `~/Downlo
 - Hardware detail for slides (from `lscpu`, saved in `submission/screenshots/01_vm_facts.txt` on the VM): IBM/S390 machine type 9175, 3 CPUs @ 5508 MHz, Big Endian, hypervisor z/VM 7.3.0, kernel 6.8.0-147 s390x; CPU flags include `vx`, `nnpa`. Say "LinuxONE VM on IBM Z (machine type 9175)"; don't name a model number we can't source.
 - `cmake`, `build-essential`, `pkg-config` preinstalled on the VM for P6 (llama.cpp attempts). `scripts/footprint.sh` verified against a live container.
 - Read partitioned CSVs with `dtype={'from_bank': str, 'to_bank': str, 'from_acct': str, 'to_acct': str}, parse_dates=['ts']` — account ids like `81245E60` turn into floats otherwise. `ts` is written as `YYYY-MM-DD HH:MM:SS`.
+
+## INFRA: integration run on the LinuxONE VM (16:10–16:13 CDT; log `~/fedaml/logs/run_demo_20261017T211056Z.log`)
+`scripts/run_demo.sh --no-rogue`, image built from f42c1c4, gate GO 21:09 UTC. Exit 0, **127 s total**. Previous state archived to `~/fedaml/archive/20261017T211057Z/`; rogue, baselines and llm files restored from it.
+| phase | wall | rounds | s/round (coordinator) | final pooled AUC / AP (banks 2,3,4) | excluded |
+|---|---|---|---|---|---|
+| dpoff | 40 s | 10 | 2.49 | 0.992 / 0.248 | bank 1 in rounds 6, 8, 10 |
+| dpon (σ 0.5, local, μ 0.1) | 40 s | 10 | 2.12 | 0.982 / 0.065 | none; ε ≈ 46.2 at δ 1e-5 (approximate) |
+Rendered coordinator: `python3 -m fedaml.coordinator --rounds 10 --banks 1,2,3,4 --eval-banks 2,3,4 --dp on --dp-mode local --sigma 0.5 --clip 1.0 --defense on --tau 1.5 --round-timeout 120 --tag dpon --seed 42` (dpoff identical with `--dp off --tag dpoff`). Banks 1–4 exited 0; coordinator 143 = stopped by run_demo after the linger window (expected).
+Tools: tryleak BLOCKED (`forbidden key 'rows'`), attacker 38 s → `state/redteam.json` (canary_update attack AUC 0.994 DP off vs 0.517 DP on; loss-threshold footnote 0.520 vs 0.505), alerts → `state/alerts.json` (20), template SAR → `state/sar/A01.md`.
+**Footprint** (`state/footprint.json`, `docker stats` every 5 s, 75 samples, s390x, 3 cpus): peak RSS bank1 725 MB (360k train rows), bank2 164, bank3 158, bank4 162, coordinator 175, dashboard 25, attacker 470 MB; sum of peaks 1,880 MB of 7.8 GB; 2.12 s per round (DP on); 127 s end to end.
+**Deviations:**
+1. **Alerts: 0 of the top 20 triggers are labelled laundering** (`state/alerts.json`). All 20 are ACH self-transfers (from_acct == to_acct) with huge amounts and a currency mismatch, e.g. 1.81 B Yen paid, 1.34 B Ruble received, score 1.0. Only 1 of 20 chains contains any laundering row. The SAR scene would narrate a legitimate transaction. Owners: MODELS/GENAI (e.g. rank within banks 2–4 test shards, or exclude self-transfers, or cap `log_amt` saturation).
+2. `submission/screenshots/02_docker_ps.txt` was captured after the banks exited (shows only coordinator + dashboard). Fixed in run_demo.sh: capture now runs in the background during the DP-on phase once ≥2 banks are up. Not yet verified in a live run.
 
 ## INFRA: data partition (REAL, done 15:23 CDT on the VM, `~/fedaml/logs/partition.log`, `~/fedaml/data/bank_map.json`)
 Raw file verified: `data/raw/HI-Small_Trans.csv` 475,664,283 bytes, `wc -l` = 5,078,346 lines (header + 5,078,345 rows), header `Timestamp,From Bank,Account,To Bank,Account,Amount Received,Receiving Currency,Amount Paid,Payment Currency,Payment Format,Is Laundering`.
