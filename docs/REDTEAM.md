@@ -20,14 +20,20 @@ model trained at that σ was given to this command.
 
 ## Video scene 5 (40 s)
 
-On screen: the LinuxONE terminal running the command above, then the table, then `docker ps`.
-Narration, 80 words, about 32 s at 150 words per minute, which leaves about 8 s for the command to visibly run:
+**Updated 16:30 CDT for the demo settings (μ 0.1, σ 0.5).** Before the final rerun, the attack numbers
+come from the μ 0.1 auditing game and the dry run: DP off 0.940 accuracy, σ 0.5 0.512, σ 0.3 0.551 AUC
+(WEAK LEAK). The game depends only on the data and σ, so the final rerun reproduces them exactly.
+`{{AUC_OFF}}` and `{{AUC_ON}}` are filled from `state/redteam.json` after the integration run.
 
-> Then we attacked ourselves. The coordinator only ever sees each bank's model update. Can it tell whether one specific suspect's transaction was in bank three's update? That is the secret banks may not share. We ran the test a hundred times with that transaction and a hundred without. Privacy off: the attacker is right eighty-six percent of the time. Turn on bank-side noise: fifty-two percent, near chance. The cost: model AUC drops from point nine nine to point nine seven.
+On screen: the LinuxONE terminal running the command above, the table with the σ 0.5 row marked
+"this run" and the σ 0.3 row reading WEAK LEAK, then `docker ps`.
+Narration, 76 words, about 34 s at 150 words per minute:
 
-Every number is from `state/redteam.json`: attack acc 0.860 vs 0.518, model AUC 0.988 vs 0.970.
-Say "on synthetic data" in the caption. Do not say "detection rate": AUC is a ranking score.
-If the demo σ changes, rerun the command and update the two percentages and the AUCs.
+> Then we attacked ourselves. The coordinator only ever sees each bank's model update. Can it tell whether one specific suspect's transaction was in bank three's update? We ran the test a hundred times with that transaction and a hundred without. Privacy off: the attacker is right ninety-four percent of the time. Our first noise level still leaked a little, so we raised it. Now: fifty-one percent, near chance. The cost: model AUC from {{AUC_OFF}} to {{AUC_ON}}.
+
+"Still leaked a little" is the σ 0.3 row: attack AUC 0.551, 90 % CI 0.53–0.57. Say "near chance" for
+σ 0.5, not "coin flip", because its interval only just touches 0.5. Do not say "detection rate": AUC
+is a ranking score. Caption: "synthetic data, attack run by us".
 
 ## What is attacked, and by whom
 
