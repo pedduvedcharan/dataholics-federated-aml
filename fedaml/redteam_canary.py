@@ -100,9 +100,10 @@ def clopper_pearson_eps(tp: int, n_in: int, fp: int, n_out: int, dp_delta: float
     return max(0.0, math.log((tpr_lo - dp_delta) / fpr_hi))
 
 
-def play(raw: dict[str, np.ndarray], sigma: float, clip: float, seed: int) -> dict:
-    """Clip + noise the precomputed updates with fedaml.dp.privatize, then score a projection attack."""
-    rng = np.random.default_rng(seed + int(sigma * 1000))
+def play(raw: dict[str, np.ndarray], sigma: float, clip: float, seed: int, bank: int = 0) -> dict:
+    """Clip + noise the precomputed updates with fedaml.dp.privatize, then score a projection attack.
+    Noise stream is seeded by (seed, bank, sigma) so banks are independent evidence."""
+    rng = np.random.default_rng([seed, bank, int(round(sigma * 1000))])
     U_in = np.array([dp.privatize(u, clip, sigma, sigma > 0, rng)[0] for u in raw["in"]])
     U_out = np.array([dp.privatize(u, clip, sigma, sigma > 0, rng)[0] for u in raw["out"]])
     trials = len(U_in)
@@ -124,6 +125,7 @@ def play(raw: dict[str, np.ndarray], sigma: float, clip: float, seed: int) -> di
            "raw_update_norm_mean": float(np.linalg.norm(raw["out"], axis=1).mean()),
            "raw_in_minus_out_norm_mean": float(np.linalg.norm(raw["in"] - raw["out"], axis=1).mean())}
     res["verdict"] = verdict(res)
+    res["auc_distance_from_chance"] = abs(res["attack_auc"] - 0.5)
     return res
 
 
@@ -169,7 +171,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     raw = raw_updates(X, y, canary, start, args.trials, args.trainer, args.subsample, args.epochs, args.eta, args.seed)
     rows = {}
     for sg in [float(s) for s in args.sigmas.split(",")]:
-        rows["DP off" if sg == 0 else f"DP on σ={sg}"] = play(raw, sg, args.clip, args.seed)
+        rows["DP off" if sg == 0 else f"DP on σ={sg}"] = play(raw, sg, args.clip, args.seed, args.bank)
     seconds = time.time() - t0
     report = {"attack": "dp_audit_canary", "bank": args.bank, "target_row": f"bank_{args.bank} test.csv laundering row #{idx}",
               "target_row_txn": {k: str(v) for k, v in te.iloc[idx].items() if k not in ("from_acct", "to_acct")},
