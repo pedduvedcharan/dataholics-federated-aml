@@ -37,6 +37,8 @@ SSH alias `dataholics` added to `~/.ssh/config` on the lead's Mac; key `~/Downlo
 - Docker: `docker run --rm ubuntu:24.04 uname -m` -> `s390x`. `docker build -t fedaml .` = **90 s**, image 926 MB, `docker run --rm fedaml` prints `fedaml image ok s390x 1.4.1.post1`. Image has phe + requests + dilithium-py (rebuilt after adding dilithium-py).
 - Layout on VM: `~/fedaml/data/{raw,banks}`, `~/fedaml/state`, `~/fedaml/logs/egress`. Compose mounts `./data ./state ./logs` into `/app/...`.
 - Helpers: `scripts/footprint.sh start|stop|report` (docker stats every 5 s -> `logs/footprint.log` -> `state/footprint.json`), `scripts/reset_run.sh [--down]`, `scripts/partition_when_landed.sh` (watcher running on the VM: partitions automatically once the CSV upload finishes; log `~/fedaml/logs/partition.log`).
+- Hardware detail for slides (from `lscpu`, saved in `submission/screenshots/01_vm_facts.txt` on the VM): IBM/S390 machine type 9175, 3 CPUs @ 5508 MHz, Big Endian, hypervisor z/VM 7.3.0, kernel 6.8.0-147 s390x; CPU flags include `vx`, `nnpa`. Say "LinuxONE VM on IBM Z (machine type 9175)"; don't name a model number we can't source.
+- `cmake`, `build-essential`, `pkg-config` preinstalled on the VM for P6 (llama.cpp attempts). `scripts/footprint.sh` verified against a live container.
 - Read partitioned CSVs with `dtype={'from_bank': str, 'to_bank': str, 'from_acct': str, 'to_acct': str}, parse_dates=['ts']` — account ids like `81245E60` turn into floats otherwise. `ts` is written as `YYYY-MM-DD HH:MM:SS`.
 
 ## Blockers
