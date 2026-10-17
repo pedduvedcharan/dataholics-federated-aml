@@ -1,0 +1,16 @@
+# data and runtime outputs never go to GitHub
+data/
+state/
+logs/
+!state/examples/
+# secrets
+*.pem
+.env
+# python
+.venv/
+__pycache__/
+*.pyc
+# editors / os
+.DS_Store
+.idea/
+.vscode/
