@@ -1,0 +1,17 @@
+# Slides — 7 slides, numbers only from `state/` and `logs/` files on the VM (file named on each slide)
+
+Format: 16:9, dark background to match the dashboard, one message per slide, ≤ 25 words of body text each.
+Owner: P1. Numbers re-checked against `docs/RESULTS_TABLE.md` (generated) before export. Export PDF to `submission/slides.pdf`.
+
+| # | Title (as on slide) | Body | Visual | Source files |
+|---|---|---|---|---|
+| 1 | What the Dutch banks had to shut down, built so it would have been legal | Launderers split one scheme across banks; each bank sees a slice. Pooling raw rows was ruled illegal (TMNL 2024). What if the data never moved? | one line drawing: 4 banks, one scheme crossing them | — |
+| 2 | Five banks, one detector, zero rows shared | IBM AML HI-Small, 5,078,345 synthetic transactions, split by `From Bank`: bank1 = 449,859 rows … rogue = 41,008. Each bank trains locally; one audited door lets out 21 clipped, noised numbers per round. | `docs/architecture.svg` | `data/bank_map.json`, `logs/egress/bank_*.jsonl` |
+| 3 | It works: federated ≈ best bank, better than pooling | Pooled test over banks 2–4. Best single bank AUC 0.986. Centralized pooling 0.983 AUC / 0.088 AP. Federated (DP off) **0.988 / 0.152**. With DP (σ 0.3) 0.970 / 0.056: the measured price. Bank 1 ≈ 0.5 for every model: its laundering is invisible to per-row features. | bar chart AUC + AP, 4 bars; footnote on bank 1 | `state/baselines.json`, `state/status_dpoff.json`, `state/status_dpon.json`, `docs/RESULTS_TABLE.md` |
+| 4 | A rogue bank poisons the model; the coordinator throws it out | Bank 5 scales its update ×−20 and claims 10× the rows. Defense off: AUC **0.500**. Defense on: **0.989**, bank 5 excluded 10/10, no honest bank excluded. Finding: privacy noise blinds this screen (1/6 caught at σ 0.3), so it is evaluated with DP off. Label-flip rogue passes but costs only 0.03. | two-line AUC-per-round chart (defense off vs on) | `state/status_rogue_off.json`, `state/status_rogue_on.json`, `state/status_rogue_on_dp.json`, `state/status_rogue_on_flip.json` |
+| 5 | We attacked our own model | Auditing game: can the coordinator tell whether one real laundering transaction was in bank 3's update? DP off: attack AUC **0.937** [0.91, 0.97], LEAKS. Bank-side noise σ 0.3: **0.525** [0.51, 0.54], near chance. σ 0.5 / 0.8: 0.50 / 0.49. Formal ε ≈ 100 is loose; the measurement is the evidence. | the redteam table (screenshot `dashboard_redteam.png`) | `state/redteam.json`, `docs/REDTEAM.md` |
+| 6 | The LLM narrates, the model decides | llama.cpp on s390x (big-endian GGUF), Qwen2.5-0.5B at 27 tok/s; code writes every fact, the LLM adds one assessment paragraph and never sees an id or amount. SAR in {{SAR_SECONDS}} s. | one SAR page (A0x) | `state/sar/A01.md`, `state/llm_runtime.json`, `docs/GENAI.md` |
+| 7 | Built on IBM Z, measured, not estimated | LinuxONE VM, s390x, 3 cores, 8 GB. Peak RAM all containers {{PEAK_RSS_MB}} MB, {{SEC_PER_ROUND}} s per round, 10 rounds in {{TOTAL_RUNTIME}}. Open source: scikit-learn, Flask, IBM ART, llama.cpp, python-paillier, dilithium-py. Repo + video links. | `docker ps` / `lscpu` screenshot | `state/footprint.json`, `submission/screenshots/01_vm_facts.txt` |
+
+## Words we use (claims discipline)
+sandboxed containers · synthetic data and synthetic attacks · measured on this VM · ε is approximate and loose · "near chance" for σ 0.3, "coin flip" only for σ 0.5/0.8 · "centralized pooling", never "ceiling" · "matches the best single bank" only for the DP-off model · "AUC", never "detection rate".
