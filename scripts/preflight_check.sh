@@ -15,12 +15,8 @@ echo "preflight $(date -u +%FT%TZ) on $(hostname) ($(uname -m), $(nproc) cpus)"
 git fetch -q origin 2>/dev/null || warn "git fetch failed"
 L=$(git rev-parse --short HEAD); R=$(git rev-parse --short origin/main 2>/dev/null || echo "?")
 [ "$L" = "$R" ] && ok "repo at origin/main $L" || bad "repo-behind" "repo HEAD $L != origin/main $R (git pull --rebase)"
-img_ts=$(date -d "$(docker image inspect fedaml --format '{{.Created}}' 2>/dev/null)" +%s 2>/dev/null || echo 0)
-code_ts=$(git log -1 --format=%ct -- fedaml Dockerfile 2>/dev/null || echo 0)
-if [ "$img_ts" -ge "$code_ts" ]; then ok "image fedaml newer than last fedaml/ or Dockerfile commit ($(git log -1 --format=%h -- fedaml Dockerfile))"
-elif [ "${1:-}" = "--rebuild" ]; then
-  t0=$(date +%s); if docker build -q -t fedaml . >/dev/null 2>&1; then ok "image rebuilt in $(( $(date +%s)-t0 ))s"; else bad "image-build" "docker build failed"; fi
-else bad "image-stale" "image fedaml older than last fedaml/ or Dockerfile commit (run with --rebuild)"; fi
+msg=$(scripts/image_fresh.sh ${1:-} 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "$msg" || bad "image-stale" "$msg (run with --rebuild)"
 
 # data
 for f in data/banks/bank_{1,2,3,4,5}/train.csv data/banks/bank_{1,2,3,4,5}/test.csv data/global_test.csv data/bank_map.json; do

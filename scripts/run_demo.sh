@@ -38,7 +38,7 @@ log "preflight in $(pwd)"
 if grep -q '"SYNTHETIC": true' data/bank_map.json 2>/dev/null; then
   log "WARNING: data/bank_map.json is SYNTHETIC. This is a dry run; no number from it goes on a slide."
 fi
-docker image inspect fedaml >/dev/null 2>&1 || die "image 'fedaml' missing: docker build -t fedaml ."
+msg=$(scripts/image_fresh.sh --rebuild 2>&1) && log "image: $msg" || die "image: $msg"   # never run a stale image
 for port in ${DEMO_PORTS:-8000 8050}; do   # host ports compose publishes
   if ss -ltn 2>/dev/null | grep -q ":$port "; then
     holder=$(sudo ss -ltnp 2>/dev/null | grep ":$port " | grep -oE 'pid=[0-9]+' | head -1)
