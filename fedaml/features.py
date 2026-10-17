@@ -67,6 +67,24 @@ FEATURE_NAMES: list[str] = (
 
 N_FEATURES = len(FEATURE_NAMES)
 
+# Plain-English meaning of each feature (docs/FEATURES.md is the human copy).
+# GENAI feeds these to the SAR writer next to the top contributions.
+FEATURE_DESCRIPTIONS: dict[str, str] = {
+    "log_amt": "payment size (log scale)",
+    "is_usd": "paid in US dollars",
+    "cur_mismatch": "currency paid differs from currency received",
+    "same_bank": "sender and receiver at the same bank",
+    "round_amt": "amount is an exact multiple of 100",
+    "hour_sin": "hour of day (cyclic)", "hour_cos": "hour of day (cyclic)",
+    "dow_sin": "day of week (cyclic)", "dow_cos": "day of week (cyclic)",
+    **{_fmt_feature_name(f): f"payment format is {f}" for f in FMT_VOCAB},
+    "snd_txn_cnt_log": "number of payments this sender made in the bank's data (log)",
+    "snd_uniq_rcv_log": "number of distinct accounts this sender paid (fan-out, log)",
+    "rcv_in_deg_log": "number of payments the receiver collected (fan-in, log)",
+    "snd_amt_mean_log": "sender's average payment size (log)",
+}
+assert set(FEATURE_DESCRIPTIONS) == set(FEATURE_NAMES)
+
 # Where data/ lives. Override with FEDAML_DATA_DIR (containers mount ./data).
 DATA_DIR = Path(os.environ.get("FEDAML_DATA_DIR", "data"))
 
