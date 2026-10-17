@@ -1,5 +1,7 @@
 # Slides — 7 slides, numbers only from `state/` and `logs/` files on the VM (file named on each slide)
 
+**Built deck (8 slides incl. cover, speaker notes on each):** claude.ai artifact "Dataholics Federated AML Deck", https://claude.ai/artifact/6C63Sxw218DjCqHjxpSu1C (private until shared from its Share menu; export PDF from there to `submission/slides.pdf`). Plain-language explainer page: https://claude.ai/artifact/VkbBS1iFdfX6Y93Mh5DQTx. Remaining placeholder in the deck: `[video link]` on the last slide.
+
 Format: 16:9, dark background to match the dashboard, one message per slide, ≤ 25 words of body text each.
 Owner: P1. Numbers re-checked against `docs/RESULTS_TABLE.md` (generated) before export. Export PDF to `submission/slides.pdf`.
 
