@@ -361,12 +361,21 @@ function renderRogue(s) {
   const summary = Object.entries(exCount).map(([b, c]) => `${rogues.has(String(b)) ? 'rogue ' : 'honest '}bank ${b} excluded in ${c}/${rounds.length} rounds`).join(' · ') || 'no exclusions so far';
   let cmp = '';
   const off = s.status_rogue_off, on = s.status_rogue_on;
-  const lastAuc = x => (x && Array.isArray(x.rounds) && x.rounds.length) ? x.rounds[x.rounds.length - 1].global_auc : null;
-  if (lastAuc(off) != null && lastAuc(on) != null) cmp = ` · final AUC defense off ${f3(lastAuc(off))} → on ${f3(lastAuc(on))}`;
+  const last = x => (x && Array.isArray(x.rounds) && x.rounds.length) ? x.rounds[x.rounds.length - 1] : null;
+  const exN = (x, b) => (x && Array.isArray(x.rounds)) ? x.rounds.filter(r => (r.excluded || []).some(e => String(e.bank_id) === String(b))).length : 0;
+  const nR = x => (x && Array.isArray(x.rounds)) ? x.rounds.length : 0;
+  const rg = [...rogues][0];
+  if (last(off) && last(on)) {
+    // MASTER 16:12: AP collapse is the visible damage; show AUC and AP side by side
+    const row = (name, x, cls) => { const l = last(x); return `<tr><td>${name}</td><td class="num">${f3(l.global_auc)}</td><td class="num"><b>${f3(l.global_ap)}</b></td><td class="num">${exN(x, rg)}/${nR(x)}</td><td style="padding-left:14px">${cls}</td></tr>`; };
+    cmp = `<table style="margin:2px 0 10px; max-width:760px"><tr><th>final round, rogue bank ${esc(rg)} present</th><th class="num">AUC</th><th class="num">AP (precision on rare laundering)</th><th class="num">bank ${esc(rg)} excluded</th><th></th></tr>`
+      + row('defense off', off, '<span class="tag bad">poisoned update averaged in</span>')
+      + row('defense on', on, '<span class="tag ok">✔ rogue screened out</span>') + '</table>';
+  }
   const dpTxt = st.dp ? (st.dp.enabled ? ` · DP on (σ ${st.dp.sigma})` : ' · defense evaluated with DP off') : '';
   $('rogue-note').textContent = src + (st.banks_expected ? ` · expected banks ${st.banks_expected.join(',')}` : '') + dpTxt;
   $('rogue-body').className = '';
-  $('rogue-body').innerHTML = `<div style="margin-bottom:6px">${esc(summary)}${esc(cmp)}</div>
+  $('rogue-body').innerHTML = `${cmp}<div style="margin-bottom:6px">${esc(summary)}</div>
     <div style="max-height:150px; overflow:auto"><table><tr><th>round</th><th>accepted</th><th>excluded</th><th>reason</th><th class="num">score</th></tr>` +
     rounds.slice().reverse().map(r => {
       const ex = r.excluded || [];
