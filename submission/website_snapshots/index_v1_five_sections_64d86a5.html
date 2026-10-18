@@ -1,0 +1,1518 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dataholics · Federated AML</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  /* ===== tokens: IBM Carbon (dashboard names + template names, light only) ===== */
+  :root {color-scheme: light;
+    
+    --page: #F4F4F4; --surface: #FFFFFF; --surface-2: #F4F4F4;              
+    --ink: #161616; --ink-2: #525252; --muted: #6F6F6F;                      
+    --primary: #0F62FE; --primary-2: #0043CE; --primary-3: #002D9C;          
+    --sage: #EDF5FF; --sage-line: #D0E2FF;                                   
+    --band: #161616; --strip: #262626; --strip-line: #393939; --strip-ink: #FFFFFF; --strip-sub: #C6C6C6; 
+    --sel: #D0E2FF;                                                          
+    --llm: #8A3FFC; --llm-tint: #F6F2FF;                                     
+    --good-ink: #198038; --good-tint: #DEFBE6; --crit-tint: #FFF1F1; --warn-tint: #FCF4D6; 
+    --grid: #E0E0E0; --axis: #C6C6C6; --hair: #E0E0E0; --border: #E0E0E0;    
+    
+    --s1: #0F62FE; --s2: #6929C4; --s3: #007D79; --s7: #D02670;            
+    --good: #24A148; --warn: #F1C21B; --serious: #FF832B; --crit: #DA1E28;   
+    --shadow: 0 9.7px 16.7px rgba(0,0,0,0.10); --shadow-soft: 0 4px 14px rgba(0,0,0,0.06);
+    --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif; --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+--bg: #f4f4f4; --surface: #ffffff; --fg: #161616; --t-muted: #525252; --line: #e0e0e0; --line2: #c6c6c6;
+  --accent: #0f62fe; --accent-soft: #edf5ff; --accent-mid: #d0e2ff; --accent-ink: #0043ce;
+  --danger: #da1e28; --danger-ink: #a2191f; --danger-soft: #fff1f1;
+  --ok: #198038; --ok-soft: #defbe6; --warn: #f1c21b; --warn-soft: #fcf4d6; --llm: #8A3FFC; --llm-soft: #f6f2ff;
+  --b1: #0f62fe; --b1s: #edf5ff; --b2: #007d79; --b2s: #d9fbfb; --b3: #8a3ffc; --b3s: #f6f2ff; --b4: #d02670; --b4s: #fff0f7;
+  --t-band: #262626; --band-fg: #f4f4f4;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", Arial, sans-serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 var(--sans); }
+  body { padding: 12px 20px 40px; }
+  b, strong { font-weight: 600; }
+  .page { max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; padding-top: 8px; }
+  .site { font-family: var(--body); font-size: 17px; line-height: 1.6; color: var(--fg); }
+  .site section.ch { scroll-margin-top: 90px; }
+  .site .replay-tag { margin: 0; display: inline-block; align-self: flex-start; font-size: 15px; background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 6px; padding: 6px 12px; }
+  .site .persona-head { display: flex; flex-direction: column; gap: 6px; max-width: 90ch; }
+  .dash .livehead { display: flex; gap: 8px 16px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; font-size: 13px; color: var(--ink-2); }
+  .dash .livehead .files { display: flex; gap: 6px; flex-wrap: wrap; }
+  .dash { display: flex; flex-direction: column; gap: 0; }
+  .dash .grid { max-width: none; width: 100%; }
+  .dash #banner { width: 100%; max-width: none; }
+  .site pre.term .muted { color: #a8a8a8; }
+  .topbar .mark { font-family: "IBM Plex Sans Condensed", "Arial Narrow", Arial, sans-serif; font-weight: 600; font-size: 17px; }
+  .topbar .mark .dotsep { color: var(--primary); }
+  body.solo .site, body.solo .dash .livehead { display: none; }
+  body.solo .page { gap: 0; }
+  body.solo .dash .grid:not(:has(.solo-on)) { display: none; }
+
+  /* ===== template sections (scoped under .site) ===== */
+  .site .wrap {max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 64px; }
+  .site p {margin: 0; }
+  .site strong {font-weight: 600; }
+  .site h1, .site h2, .site h3 {margin: 0; text-wrap: balance; }
+  .site h1 {font-family: var(--display); font-weight: 700; font-size: clamp(40px, 7vw, 72px); line-height: 1.02; letter-spacing: -.01em; }
+  .site h2 {font-family: var(--display); font-weight: 600; font-size: clamp(28px, 3.8vw, 38px); line-height: 1.12; }
+  .site h3 {font-family: var(--display); font-weight: 600; font-size: 22px; line-height: 1.2; }
+  .site .num, .site .mono {font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .site .muted {color: var(--t-muted); }
+  .site .prose {display: flex; flex-direction: column; gap: 14px; max-width: 70ch; }
+  .site header.hero {display: flex; flex-direction: column; gap: 18px; padding-top: 48px; }
+  .site .eyebrow {font-family: var(--mono); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+  .site .lede {font-size: 21px; line-height: 1.5; max-width: 62ch; }
+  .site .chips {display: flex; flex-wrap: wrap; gap: 8px; }
+  .site .chip {font-family: var(--mono); font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line2); color: var(--fg); background: var(--surface); }
+  .site .chip.a {border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+  .site .chip.r {border-color: var(--danger); color: var(--danger-ink); background: var(--danger-soft); }
+  .site .chip.g {border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
+  .site .chip.y {border-color: var(--warn); color: var(--fg); background: var(--warn-soft); }
+  .site section.ch {display: flex; flex-direction: column; gap: 22px; scroll-margin-top: 72px; }
+  .site .chno {font-family: var(--mono); font-size: 14px; color: var(--accent); letter-spacing: .06em; }
+  .site .crit {display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--t-muted); }
+  .site .crit b {font-family: var(--mono); font-weight: 500; color: var(--accent-ink); background: var(--accent-soft); padding: 1px 8px; border-radius: 3px; }
+  .site .grid {display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .site .card {background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px 22px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .site .card .big {font-family: var(--mono); font-size: 32px; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--accent); }
+  .site .card.red {border-color: var(--danger); background: var(--danger-soft); }
+  .site .card.red .big {color: var(--danger-ink); }
+  .site figure {margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .site .plate {overflow-x: auto; }
+  .site .plate svg {display: block; width: 100%; height: auto; min-width: 760px; }
+  .site figcaption {font-size: 15px; color: var(--t-muted); max-width: 90ch; }
+  .site svg {font-family: var(--body); }
+  .site .s-box {fill: var(--surface); stroke: var(--line2); stroke-width: 1.5; }
+  .site .s-in {fill: var(--surface); stroke: var(--line2); stroke-width: 1; }
+  .site .s-acc {fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .site .s-red {fill: var(--danger-soft); stroke: var(--danger); stroke-width: 1.5; stroke-dasharray: 7 5; }
+  .site .s-yel {fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.5; }
+  .site .s-band {fill: var(--t-band); }
+  .site .s-ln {stroke: var(--fg); stroke-width: 1.6; fill: none; }
+  .site .s-lna {stroke: var(--accent); stroke-width: 2.2; fill: none; }
+  .site .s-lnr {stroke: var(--danger); stroke-width: 2.2; fill: none; stroke-dasharray: 6 4; }
+  .site .s-dash {stroke: var(--t-muted); stroke-width: 1.6; fill: none; stroke-dasharray: 6 5; }
+  .site .mk {fill: var(--fg); }
+  .site .mka {fill: var(--accent); }
+  .site .mkr {fill: var(--danger); }
+  .site .mkm {fill: var(--t-muted); }
+  .site .t {fill: var(--fg); font-size: 13px; }
+  .site .tb {fill: var(--fg); font-size: 14px; font-weight: 600; }
+  .site .th {fill: var(--fg); font-family: var(--display); font-weight: 600; font-size: 19px; }
+  .site .tm {fill: var(--t-muted); font-size: 12px; }
+  .site .ti {fill: var(--t-muted); font-size: 12.5px; font-style: italic; }
+  .site .ta {fill: var(--accent-ink); font-size: 13px; font-weight: 600; }
+  .site .tr {fill: var(--danger-ink); font-size: 13px; font-weight: 600; }
+  .site .tw {fill: var(--band-fg); font-size: 13px; font-weight: 600; }
+  .site .tmono {fill: var(--fg); font-family: var(--mono); font-size: 12px; }
+  .site .bk1 {fill: var(--b1s); stroke: var(--b1); stroke-width: 1.6; }
+  .site .bk1h {fill: var(--b1); }
+  .site .bk2 {fill: var(--b2s); stroke: var(--b2); stroke-width: 1.6; }
+  .site .bk2h {fill: var(--b2); }
+  .site .bk3 {fill: var(--b3s); stroke: var(--b3); stroke-width: 1.6; }
+  .site .bk3h {fill: var(--b3); }
+  .site .bk4 {fill: var(--b4s); stroke: var(--b4); stroke-width: 1.6; }
+  .site .bk4h {fill: var(--b4); }
+  .site .bk5 {fill: var(--danger-soft); stroke: var(--danger); stroke-width: 1.6; stroke-dasharray: 7 5; }
+  .site .bk5h {fill: var(--danger); }
+  .site .l1 {stroke: var(--b1); stroke-width: 2; fill: none; }
+  .site .l2 {stroke: var(--b2); stroke-width: 2; fill: none; }
+  .site .l3 {stroke: var(--b3); stroke-width: 2; fill: none; }
+  .site .l4 {stroke: var(--b4); stroke-width: 2; fill: none; }
+  .site .hdr {fill: #ffffff; font-family: var(--display); font-weight: 600; font-size: 16px; }
+  .site ol.steps {list-style: none; margin: 0; padding: 0; counter-reset: s; display: grid; max-width: 90ch; }
+  .site ol.steps li {counter-increment: s; display: grid; grid-template-columns: 48px 1fr; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .site ol.steps li:last-child {border-bottom: 1px solid var(--line); }
+  .site ol.steps li::before {content: counter(s, decimal-leading-zero); font-family: var(--mono); color: var(--accent); font-size: 18px; }
+  .site ol.steps li > div {min-width: 0; }
+  .site .where {display: block; font-family: var(--mono); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t-muted); }
+  .site .shots {display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+  .site .shot {background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+  .site .shot img {display: block; width: 100%; height: auto; border-bottom: 1px solid var(--line); aspect-ratio: 16 / 9; object-fit: cover; object-position: top; background: var(--bg); }
+  .site .shot .cap {padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+  .site .persona {display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+  .site .flow {display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; }
+  .site .flow .st {background: var(--surface); border: 1px solid var(--line2); border-radius: 6px; padding: 6px 10px; }
+  .site .flow .st.llm {border-color: var(--llm); background: var(--llm-soft); }
+  .site .flow .st.hum {border-color: var(--ok); background: var(--ok-soft); }
+  .site .flow .ar {color: var(--t-muted); }
+  .site pre.term {margin: 0; background: #161616; color: #e0e0e0; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; padding: 16px 18px; border-radius: 8px; overflow-x: auto; }
+  .site pre.term .p {color: #78a9ff; }
+  .site pre.term .g {color: #42be65; }
+  .site .demo {background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+  .site .replay {display: flex; gap: 10px; align-items: flex-start; font-size: 14px; background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 6px; padding: 10px 14px; }
+  .site .controls {display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .site .seg {display: inline-flex; border: 1px solid var(--line2); border-radius: 6px; overflow: hidden; flex-wrap: wrap; }
+  .site .seg button {font: inherit; font-size: 14px; border: 0; background: var(--surface); color: var(--fg); padding: 8px 12px; cursor: pointer; border-right: 1px solid var(--line2); }
+  .site .seg button:last-child {border-right: 0; }
+  .site .seg button[aria-pressed="true"] {background: var(--accent); color: #ffffff; }
+  .site .btn {font: inherit; font-size: 14px; font-weight: 500; border-radius: 6px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--accent); background: var(--accent); color: #ffffff; }
+  .site .btn.ghost {background: transparent; color: var(--accent-ink); }
+  .site .btn.danger {background: var(--danger-soft); color: var(--danger-ink); border-color: var(--danger); }
+  .site button:focus-visible {outline: 3px solid var(--accent-mid); outline-offset: 2px; }
+  .site .dgrid {display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 860px) {
+  .site .dgrid {grid-template-columns: 1fr; }
+}
+  .site .panel {border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .site .panel h3 {font-size: 18px; }
+  .site .kpis {display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 560px) {
+  .site .kpis {grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+  .site .kpi {border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .site .kpi .l {font-size: 12px; color: var(--t-muted); }
+  .site .kpi .v {font-family: var(--mono); font-size: 26px; line-height: 1.15; color: var(--accent); }
+  .site .kpi.ok .v {color: var(--ok); }
+  .site .kpi.bad {border-color: var(--danger); background: var(--danger-soft); }
+  .site .kpi.bad .v {color: var(--danger-ink); }
+  .site .banks {display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .site .bank {border-radius: 6px; padding: 8px; font-size: 12.5px; border: 1.5px solid var(--line2); background: var(--surface); display: flex; flex-direction: column; gap: 2px; min-width: 0; transition: transform .25s ease, box-shadow .25s ease; }
+  .site .bank b {font-family: var(--display); font-size: 15px; }
+  .site .bank.pulse {transform: translateY(-3px); box-shadow: 0 4px 0 var(--accent-mid); }
+  .site .bank.off {opacity: .45; }
+  .site .bank .st {font-family: var(--mono); font-size: 11px; }
+  .site .log {font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; height: 168px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .site .log .bl {color: var(--danger-ink); font-weight: 500; }
+  .site .log .ex {color: var(--danger-ink); }
+  .site .log .ok {color: var(--ok); }
+  .site .chartbox svg {display: block; width: 100%; height: auto; }
+  .site .verdict {font-size: 14px; border-left: 3px solid var(--line2); padding: 6px 10px; background: var(--bg); }
+  .site .verdict.ok {border-color: var(--ok); }
+  .site .verdict.bad {border-color: var(--danger); }
+  .site .verdict.warn {border-color: var(--warn); }
+  .site table.q {width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .site table.q th {text-align: left; font-family: var(--mono); font-weight: 500; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--band-fg); background: var(--t-band); padding: 6px 8px; }
+  .site table.q td {padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .site table.q tr.sel td {background: var(--accent-mid); }
+  .site table.q tbody tr {cursor: pointer; }
+  .site table.q tbody tr:hover td {background: var(--accent-soft); }
+  .site table.q td.r {text-align: right; font-family: var(--mono); }
+  .site .qwrap {overflow-x: auto; max-height: 300px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .site .sar {font-size: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .site .sar .llmbox {border-left: 3px solid var(--llm); background: var(--llm-soft); padding: 10px 12px; border-radius: 0 6px 6px 0; }
+  .site .sar .llmbox .lbl {font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--llm); text-transform: uppercase; display: block; margin-bottom: 4px; }
+  .site .redrow {display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .site .score {display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+  .site .score .card h3 {font-size: 20px; }
+  .site .score ul {margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+  .site .limits {margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; max-width: 90ch; }
+  .site footer {font-size: 14px; color: var(--t-muted); border-top: 1px solid var(--line); padding-top: 18px; }
+@media (max-width: 560px) {
+  .site .lede {font-size: 18px; }
+  .site .banks {grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .site .bank {transition: none; }
+}
+
+  /* ===== live dashboard panels (scoped under .dash) ===== */
+  * {box-sizing: border-box; }
+  html, body {margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 var(--sans); }
+  body {padding: 12px 20px 40px; }
+  b, strong {font-weight: 600; }
+  .dash .num, .dash td.num, .dash .mono {font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .topbar {position: sticky; top: 12px; z-index: 20; max-width: 1180px; margin: 0 auto; height: 56px;
+    display: flex; align-items: center; gap: 18px; padding: 10px 13px 10px 22px; border-radius: 40px;
+    background: rgba(255,255,255,0.86); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: var(--shadow); }
+  .topbar .mark {font-size: 16px; font-weight: 500; color: var(--primary); white-space: nowrap; letter-spacing: -0.01em; }
+  .topbar .mark .dotsep {color: var(--muted); font-weight: 400; }
+  .topbar nav {display: flex; gap: 18px; margin-left: 10px; flex-wrap: nowrap; overflow: hidden; }
+  .topbar nav a {font-size: 14px; font-weight: 500; color: var(--ink); text-decoration: none; white-space: nowrap; }
+  .topbar nav a:hover {color: var(--primary); text-decoration: underline; text-underline-offset: 4px; }
+  .topbar .right {margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .btn-pill {display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 30px;
+    font-size: 13.5px; font-weight: 500; white-space: nowrap; border: 1px solid var(--primary); }
+  .btn-pill.filled {background: var(--primary); color: #fff; }
+  .btn-pill.outline {background: transparent; color: var(--primary); }
+  .btn-pill .dot {width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .btn-pill.live .dot {background: var(--good); box-shadow: 0 0 0 3px rgba(36,161,72,0.22); }
+  .btn-pill.offline {color: var(--crit); border-color: var(--crit); }
+  .btn-pill.offline .dot {background: var(--crit); }
+  .btn-pill.filled.dpoff {background: var(--crit); border-color: var(--crit); }
+  .dash .pill {display: inline-flex; align-items: center; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--hair);
+    color: var(--ink-2); background: transparent; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
+  .dash .pill .dot {display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+  .dash .pill.on {border-color: var(--sage-line); background: var(--sage); color: var(--ink); }
+  .dash .pill.on .dot {background: var(--good); }
+  .dash .pill.off {color: var(--muted); border-style: dashed; }
+  .dash #banner {display: none; max-width: 1240px; margin: 0 auto 16px; background: var(--warn-tint); color: var(--ink); border: 1px solid var(--warn);
+    padding: 9px 18px; border-radius: 30px; font-weight: 500; }
+  .dash .grid {display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1240px; margin: 0 auto; }
+  .dash .panel {background: var(--sage); border: 1px solid var(--sage-line); border-radius: 25px; padding: 28px; min-width: 0; scroll-margin-top: 84px; }
+  .dash .panel.wide {grid-column: 1 / -1; }
+  .dash .panel h2 {margin: 0 0 18px; font-size: 22px; line-height: 1.2; font-weight: 500; color: var(--ink); letter-spacing: -0.01em;
+    display: flex; gap: 6px 14px; align-items: baseline; flex-wrap: wrap; }
+  .dash .panel h2 .note {font-size: 13px; font-weight: 400; color: var(--ink-2); letter-spacing: 0; }
+  .dash .waiting {color: var(--muted); font-style: italic; padding: 8px 0; }
+  .dash .card {background: var(--surface); border-radius: 16px; padding: 18px 20px; box-shadow: var(--shadow-soft); min-width: 0; }
+  .dash .card + .card, .dash .card + table, .dash .card + div {margin-top: 14px; }
+  .dash .card-title {font-size: 13px; font-weight: 500; color: var(--primary); margin: 0 0 10px; }
+  .dash .small {font-size: 12.5px; color: var(--ink-2); }
+  .dash .reg {display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 14px; align-items: stretch; }
+  .dash .tile {background: var(--surface); border-radius: 16px; padding: 18px 20px; box-shadow: var(--shadow-soft); display: flex; flex-direction: column; }
+  .dash .tile .lbl {font-size: 15px; font-weight: 500; color: var(--primary); }
+  .dash .tile .val {font-size: 56px; line-height: 1; font-weight: 400; color: var(--primary); margin-top: 14px; letter-spacing: -0.02em; font-family: var(--sans); font-variant-numeric: tabular-nums; }
+  .dash .tile.hero .val {font-size: 84px; line-height: 0.91; }
+  .dash .tile .meta {font-size: 13px; color: var(--ink-2); margin-top: auto; padding-top: 10px; min-height: 18px; }
+  .dash .tile .val .ic {font-size: 30px; vertical-align: 0.9em; margin-right: 8px; color: var(--good); }
+  .dash .tile.hero .val .ic {font-size: 30px; vertical-align: 1.3em; }
+  .dash .tile.crit .val {color: var(--crit); }
+  .dash .tile.crit {box-shadow: inset 0 0 0 2px var(--crit), var(--shadow-soft); }
+  .dash .tile.crit .val .ic {color: var(--crit); }
+  .dash .tailwrap {margin-top: 16px; }
+  .dash .tailwrap .card-title {margin-bottom: 8px; }
+  .dash .tail {display: flex; flex-direction: column; gap: 4px; font: 12.5px/1.4 var(--mono); }
+  .dash .tail .l {display: flex; align-items: center; gap: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    background: rgba(255,255,255,0.78); border-radius: 10px; padding: 5px 12px; color: var(--ink); min-width: 0; }
+  .dash .tail .l > span:last-child {overflow: hidden; text-overflow: ellipsis; }
+  .dash .tail .l .t {color: var(--muted); flex: none; }
+  .dash .tail .l .k {color: var(--primary); font-weight: 500; }
+  .dash .tail .l.blocked {background: var(--crit-tint); box-shadow: inset 0 0 0 1px #FFB3B8; color: var(--ink); }
+  .dash .tail .l.blocked .k {background: var(--crit); color: #fff; border-radius: 999px; padding: 1px 9px; font-size: 11.5px; font-weight: 500; }
+  .dash .tail .l.failed .k {color: #BA4E00; }
+  .dash table {border-collapse: separate; border-spacing: 0; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .dash th, .dash td {text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--hair); vertical-align: middle; }
+  .dash th {background: var(--band); color: #fff; font-weight: 500; font-size: 12.5px; border-bottom: 0; position: sticky; top: 0; z-index: 1; }
+  .dash tr:first-child th:first-child {border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
+  .dash tr:first-child th:last-child {border-top-right-radius: 10px; border-bottom-right-radius: 10px; }
+  .dash td.num, .dash th.num {text-align: right; }
+  .dash td.num {font-family: var(--mono); font-size: 12.5px; }
+  .dash tr.ex td {background: var(--crit-tint); }
+  .dash table.plain th {background: transparent; color: var(--muted); border-bottom: 1px solid var(--hair); border-radius: 0 !important; position: static; }
+  .dash .scroll {overflow: auto; }
+  .dash .card {overflow-x: auto; }
+  .dash #red-body th, .dash #red-body td {padding: 6px 7px; font-size: 12px; }
+  .dash #red-body th {font-size: 11.5px; line-height: 1.25; }
+  body.solo #red-body svg {max-width: 760px; }
+  .dash .tag {display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500;
+    border: 1px solid currentColor; background: transparent; white-space: nowrap; line-height: 1.5; }
+  .dash .tag.ok {color: var(--good-ink); border-color: var(--good); background: var(--good-tint); }
+  .dash .tag.bad {color: #A2191F; border-color: var(--crit); background: var(--crit-tint); }
+  .dash .tag.warn {color: var(--ink); border-color: var(--warn); background: var(--warn); }
+  .dash .tag.muted {color: var(--muted); border-color: var(--hair); }
+  .dash .chartbox {position: relative; height: 220px; }
+  .dash .legendrow {display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+  .dash .legendrow .sw {display: inline-block; width: 16px; height: 0; border-top: 2px solid; vertical-align: 3px; margin-right: 6px; }
+  .dash .strip {display: grid; grid-auto-flow: column; grid-auto-columns: auto; background: var(--strip); border-radius: 16px; overflow: hidden; color: var(--strip-ink); }
+  .dash .strip .cell {padding: 12px 14px 14px; border-left: 1px solid var(--strip-line); min-width: 0; }
+  .dash .strip .cell:first-child {border-left: 0; }
+  .dash .strip .k {font-size: 12px; font-weight: 500; color: var(--strip-sub); }
+  .dash .strip .v {font-size: 28px; line-height: 1.1; font-weight: 400; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dash .strip .m {font-size: 11.5px; color: var(--strip-sub); margin-top: 3px; }
+  .dash #priv-body .strip .v {font-size: 24px; }
+  .dash #train-table th, .dash #train-table td {padding: 6px 7px; font-size: 12px; }
+  .dash #train-table th {font-size: 11.5px; line-height: 1.25; }
+  .dash .meter {margin: 14px 0 12px; }
+  .dash .meter .bar {height: 14px; background: #fff; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--hair); overflow: visible; position: relative; }
+  .dash .meter .fill {height: 100%; width: 0; background: var(--primary); transition: width .6s ease; border-radius: 999px; }
+  .dash .meter .fill.warn {background: var(--warn); }
+  .dash .meter .fill.serious {background: var(--serious); }
+  .dash .meter .fill.crit {background: var(--crit); }
+  .dash .meter .ticks {display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-2); margin-top: 6px; }
+  .dash .big {font-size: 40px; line-height: 1; font-weight: 400; color: var(--primary); letter-spacing: -0.02em; }
+  .dash .kv {display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font-size: 13px; }
+  .dash .kv dt {color: var(--muted); }
+  .dash .kv dd {margin: 0; }
+  .dash .verdict {padding: 12px 16px; border-radius: 14px; font-weight: 500; margin-top: 14px; display: flex; gap: 8px; align-items: center; background: #fff; box-shadow: inset 4px 0 0 var(--muted); line-height: 1.45; }
+  .dash .verdict.good {box-shadow: inset 4px 0 0 var(--good); }
+  .dash .verdict.bad {box-shadow: inset 4px 0 0 var(--crit); }
+  .dash .verdict.warn {box-shadow: inset 4px 0 0 var(--warn); }
+  .dash .entity {display: flex; flex-direction: column; gap: 2px; }
+  .dash .entity .e-lbl {font-size: 14px; font-weight: 500; color: var(--primary); }
+  .dash .entity .e-id {font-size: 22px; color: var(--primary); }
+  .dash .entity .e-st {font-size: 14px; color: var(--ink-2); }
+  .dash .entity .e-name {font-size: 40px; line-height: 1.05; font-weight: 400; letter-spacing: -0.02em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .dash .entity .e-row {display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .dash .kpis2 {display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+  .dash .kpis2 .tile .val {font-size: 48px; }
+  .dash .kpis2 .tile .unit {font-size: 12.5px; color: var(--ink-2); margin-top: 6px; }
+  .dash .kpis2 .tile .val {margin-top: 10px; }
+  .dash .hbar {display: inline-block; height: 12px; background: var(--s1); border-radius: 0 6px 6px 0; vertical-align: middle; margin-right: 10px; }
+  .dash .foot {display: grid; grid-template-columns: 1fr; gap: 16px; }
+  .dash #foot-body th:first-child, .dash #foot-body td:first-child {width: 200px; }
+  .dash #foot-body td {padding: 5px 12px; }
+  body.solo .topbar, body.solo .pagehead, body.solo #banner-keep-hidden {display: none; }
+  body.solo .grid > .panel:not(.solo-on), body.solo footer.panel:not(.solo-on) {display: none; }
+  body.solo .panel.solo-on {grid-column: 1 / -1; }
+  body.solo .panel.solo-on [style*="max-height"] {max-height: none !important; overflow: visible !important; }
+  .dash .aq {display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; min-height: 0; }
+  .dash .aq .queue {max-height: 600px; overflow: auto; padding: 10px; }
+  .dash .aq table tr.sel td {background: var(--sel); }
+  .dash .aq table tr.sel td .tag:not(.warn) {background: #fff; }
+  .dash .aq table tr.pick {cursor: pointer; }
+  .dash .aq table tr.pick:hover td {background: var(--surface-2); }
+  .dash .aq table tr.sel:hover td {background: var(--sel); }
+  .dash .aq .tag {white-space: nowrap; }
+  .dash .aq .queue table {font-size: 12.5px; }
+  .dash .aq .queue th, .dash .aq .queue td {padding: 7px 7px; white-space: nowrap; }
+  .dash .aq .queue td {font-size: 12px; }
+  .dash .aq .queue .tag {font-size: 11.5px; padding: 1px 8px; }
+  .dash .aq .queue td.cur {color: var(--muted); }
+  .dash .aq .queue td.aid {color: var(--primary); font-family: var(--mono); font-weight: 500; }
+  .dash #aq-meta {font-size: 14px; color: var(--ink); margin-bottom: 14px; }
+  .dash .sar {background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-soft); padding: 16px 22px; max-height: 470px; overflow: auto; font-size: 13.5px; line-height: 1.55; }
+  .dash .sar h1 {font-size: 20px; font-weight: 500; margin: 0 0 8px; color: var(--primary); }
+  .dash .sar h2 {font-size: 12.5px; font-weight: 500; color: var(--primary); margin: 16px 0 4px; }
+  .dash .sar p {margin: 4px 0 10px; color: var(--ink); }
+  .dash .sar ul {margin: 2px 0 10px 18px; padding: 0; color: var(--ink); }
+  .dash .sar code {font-family: var(--mono); font-size: 12px; color: var(--primary); }
+  .dash .sar table {font-size: 12px; margin: 4px 0 12px; }
+  .dash .sar th {background: transparent; color: var(--muted); border-bottom: 1px solid var(--hair); border-radius: 0 !important; position: static; padding: 4px 10px 4px 0; }
+  .dash .sar td {padding: 4px 10px 4px 0; }
+  .dash .sar em {color: var(--muted); }
+  .dash .sar .llm {border-left: 4px solid var(--llm); background: var(--llm-tint); padding: 10px 14px; border-radius: 0 12px 12px 0; color: var(--ink); }
+  .dash .sar .llm-label {display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--llm); margin-bottom: 3px; font-weight: 600; }
+  .dash .provenance {display: flex; gap: 4px 16px; font-size: 12px; color: var(--ink-2); margin: 10px 0 8px; flex-wrap: wrap; }
+  .dash .provenance .sw {display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
+  .dash #aq-entity {margin-bottom: 0; padding: 14px 20px; }
+  .dash #aq-entity .e-name {font-size: 34px; margin-top: 4px; }
+  .dash #aq-entity .e-row {margin-top: 6px; }
+  body.solo .aq .queue, body.solo .sar {max-height: 620px; }
+  .dash footer.panel#p-evidence {background: transparent; border: 1px solid var(--hair); max-width: 1240px; margin: 24px auto 0; }
+  .dash footer.panel#p-evidence h2 {color: var(--ink); }
+  .dash footer.panel#p-evidence td {font-size: 13px; vertical-align: top; }
+@media (max-width: 1000px) {
+  .dash .aq {grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 1000px) {
+  .dash .grid {grid-template-columns: 1fr; }
+  .dash .reg {grid-template-columns: 1fr 1fr; }
+  .topbar nav {display: none; }
+  .dash .strip {grid-auto-flow: row; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="mark">Dataholics <span class="dotsep">·</span> federated AML</span>
+  <nav>
+    <a href="#problem">1 Problem</a><a href="#architecture">2 Architecture</a><a href="#dashboards">3 Dashboards</a><a href="#demo">4 Demo</a><a href="#scorecard">5 Judging</a>
+  </nav>
+  <div class="right">
+    <span class="btn-pill outline" id="pill-live"><span class="dot"></span>connecting…</span>
+    <span class="btn-pill filled" id="pill-run">run: waiting</span>
+  </div>
+</header>
+<main class="page">
+
+<div class="site">
+<section class="ch" id="problem">
+  <header class="hero">
+  <span class="eyebrow">IBM Z Datathon 2026 · Team Dataholics, UT Dallas · theme: AI Secured, innovation without exposure</span>
+  <h1>What the Dutch banks had to shut down, built so it would have been legal.</h1>
+  <p class="lede">Five banks train one money-laundering detector together. No customer transaction ever leaves a bank. Then we attack our own system to prove the privacy holds, catch a bank that cheats, and let a small AI on the same IBM LinuxONE machine draft the report for an investigator.</p>
+  <div class="chips">
+    <span class="chip a">0 transaction rows shared</span>
+    <span class="chip a">21 numbers per bank per round</span>
+    <span class="chip g">attack on our model: near chance</span>
+    <span class="chip r">cheating bank excluded 10 / 10 rounds</span>
+    <span class="chip">IBM LinuxONE · s390x · sandboxed containers</span>
+  </div>
+</header>
+  <span class="chno">01 · PROBLEM STATEMENT</span>
+  <h2>Money launderers hide in the gaps between banks</h2>
+  <span class="crit">Judging criterion <b>1 · Value to the community and theme fit</b></span>
+  <figure>
+    <div class="plate">
+      <svg viewBox="0 0 900 200" role="img" aria-label="One laundering scheme passes from Bank A to Bank B to Bank C. Each bank sees only its own transfer, which looks normal on its own.">
+        <defs><marker id="pa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mkr" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+        <line class="s-dash" x1="40" y1="34" x2="860" y2="34"/><line class="s-dash" x1="40" y1="34" x2="40" y2="48"/><line class="s-dash" x1="860" y1="34" x2="860" y2="48"/>
+        <text class="tr" x="450" y="24" text-anchor="middle">one scheme: visible only to someone who could see all three banks at once</text>
+        <rect class="s-box" x="40" y="58" width="230" height="116" rx="8"/><text class="th" x="60" y="88">Bank A</text><text class="t" x="60" y="118">sees: €2.0M goes out</text><text class="tm" x="60" y="146">alone, it looks normal</text>
+        <rect class="s-box" x="335" y="58" width="230" height="116" rx="8"/><text class="th" x="355" y="88">Bank B</text><text class="t" x="355" y="118">sees: €2.0M in, €1.9M out</text><text class="tm" x="355" y="146">alone, it looks normal</text>
+        <rect class="s-box" x="630" y="58" width="230" height="116" rx="8"/><text class="th" x="650" y="88">Bank C</text><text class="t" x="650" y="118">sees: €1.9M comes in</text><text class="tm" x="650" y="146">alone, it looks normal</text>
+        <line class="s-lnr" style="stroke-dasharray:none" x1="270" y1="118" x2="331" y2="118" marker-end="url(#pa)"/>
+        <line class="s-lnr" style="stroke-dasharray:none" x1="565" y1="118" x2="626" y2="118" marker-end="url(#pa)"/>
+      </svg>
+    </div>
+    <figcaption>Illustrative amounts. Each bank checks only its own customers' payments, so a scheme split across banks slips through.</figcaption>
+  </figure>
+  <div class="grid">
+    <div class="card"><h3>Why the obvious fix failed</h3><p>Pooling every bank's transactions in one place works technically. In the Netherlands, five large banks did exactly that through TMNL, and it was shut down in 2024 over privacy law. Singapore's COSMIC only shares after a bank already suspects someone; the US 314(b) sharing rule is barely used.</p></div>
+    <div class="card"><h3>Who benefits if it works</h3><p><strong>Banks</strong> catch schemes they cannot see alone. <strong>Regulators</strong> get an audit trail proving no customer data moved. <strong>Customers</strong> keep their transactions private. <strong>The public</strong> loses less money to fraud, trafficking and sanctions evasion.</p></div>
+    <div class="card"><h3>Why it is "AI Secured"</h3><p>The theme is built into every layer: <strong>data</strong> never leaves a bank, <strong>identities</strong> never reach the AI writer, the <strong>model</strong> is attacked by us to prove it does not leak, and the <strong>system</strong> runs as sandboxed containers on IBM LinuxONE.</p></div>
+  </div>
+</section>
+</div>
+
+<div class="site">
+<section class="ch" id="architecture">
+  <span class="chno">02 · SYSTEM ARCHITECTURE, START TO END</span>
+  <h2>Banks learn together; only 21 numbers ever leave a bank</h2>
+  <span class="crit">Judging criteria <b>2 · Novelty</b> <b>3 · Technical design and use of LinuxONE</b></span>
+  <figure>
+    <div class="plate">
+      <svg viewBox="0 0 1200 800" role="img" aria-label="Five banks each keep private transaction data, train a local copy of the shared model, then clip and add noise. Only model updates of 21 numbers pass through each bank's egress door to the coordinator on IBM LinuxONE, which screens out the cheating bank 5, averages the rest and sends the updated global model back to every bank, for 10 rounds. Results go to the regulator dashboard, the red team and the AI report writer.">
+        <defs>
+          <marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mka" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mkr" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mkm" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+
+        <!-- five bank cards -->
+        <g>
+          <rect class="bk1" x="40" y="20" width="214" height="252" rx="10"/><rect class="bk1h" x="40" y="20" width="214" height="38" rx="10"/><rect class="bk1h" x="40" y="44" width="214" height="14"/>
+          <text class="hdr" x="147" y="45" text-anchor="middle">Bank 1</text>
+          <text class="tb" x="56" y="82">Private transactions</text><text class="tm" x="56" y="99">449,859 rows · stays inside</text>
+          <line class="s-ln" x1="70" y1="108" x2="70" y2="126" marker-end="url(#aa)"/><text class="tm" x="84" y="122">train on its own data</text>
+          <rect class="s-in" x="56" y="132" width="182" height="52" rx="6"/><text class="t" x="70" y="153">Local copy of the model</text><text class="tm" x="70" y="171">logistic regression, 21 weights</text>
+          <line class="s-ln" x1="70" y1="186" x2="70" y2="204" marker-end="url(#aa)"/>
+          <rect class="s-acc" x="56" y="210" width="182" height="48" rx="6"/><text class="ta" x="70" y="230">Clip + add noise</text><text class="tm" x="70" y="248">inside the bank · σ 0.5</text>
+        </g>
+        <g>
+          <rect class="bk2" x="264" y="20" width="214" height="252" rx="10"/><rect class="bk2h" x="264" y="20" width="214" height="38" rx="10"/><rect class="bk2h" x="264" y="44" width="214" height="14"/>
+          <text class="hdr" x="371" y="45" text-anchor="middle">Bank 2</text>
+          <text class="tb" x="280" y="82">Private transactions</text><text class="tm" x="280" y="99">71,177 rows · stays inside</text>
+          <line class="s-ln" x1="294" y1="108" x2="294" y2="126" marker-end="url(#aa)"/><text class="tm" x="308" y="122">train on its own data</text>
+          <rect class="s-in" x="280" y="132" width="182" height="52" rx="6"/><text class="t" x="294" y="153">Local copy of the model</text><text class="tm" x="294" y="171">logistic regression, 21 weights</text>
+          <line class="s-ln" x1="294" y1="186" x2="294" y2="204" marker-end="url(#aa)"/>
+          <rect class="s-acc" x="280" y="210" width="182" height="48" rx="6"/><text class="ta" x="294" y="230">Clip + add noise</text><text class="tm" x="294" y="248">inside the bank · σ 0.5</text>
+        </g>
+        <g>
+          <rect class="bk3" x="488" y="20" width="214" height="252" rx="10"/><rect class="bk3h" x="488" y="20" width="214" height="38" rx="10"/><rect class="bk3h" x="488" y="44" width="214" height="14"/>
+          <text class="hdr" x="595" y="45" text-anchor="middle">Bank 3</text>
+          <text class="tb" x="504" y="82">Private transactions</text><text class="tm" x="504" y="99">64,791 rows · stays inside</text>
+          <line class="s-ln" x1="518" y1="108" x2="518" y2="126" marker-end="url(#aa)"/><text class="tm" x="532" y="122">train on its own data</text>
+          <rect class="s-in" x="504" y="132" width="182" height="52" rx="6"/><text class="t" x="518" y="153">Local copy of the model</text><text class="tm" x="518" y="171">logistic regression, 21 weights</text>
+          <line class="s-ln" x1="518" y1="186" x2="518" y2="204" marker-end="url(#aa)"/>
+          <rect class="s-acc" x="504" y="210" width="182" height="48" rx="6"/><text class="ta" x="518" y="230">Clip + add noise</text><text class="tm" x="518" y="248">inside the bank · σ 0.5</text>
+        </g>
+        <g>
+          <rect class="bk4" x="712" y="20" width="214" height="252" rx="10"/><rect class="bk4h" x="712" y="20" width="214" height="38" rx="10"/><rect class="bk4h" x="712" y="44" width="214" height="14"/>
+          <text class="hdr" x="819" y="45" text-anchor="middle">Bank 4</text>
+          <text class="tb" x="728" y="82">Private transactions</text><text class="tm" x="728" y="99">62,211 rows · stays inside</text>
+          <line class="s-ln" x1="742" y1="108" x2="742" y2="126" marker-end="url(#aa)"/><text class="tm" x="756" y="122">train on its own data</text>
+          <rect class="s-in" x="728" y="132" width="182" height="52" rx="6"/><text class="t" x="742" y="153">Local copy of the model</text><text class="tm" x="742" y="171">logistic regression, 21 weights</text>
+          <line class="s-ln" x1="742" y1="186" x2="742" y2="204" marker-end="url(#aa)"/>
+          <rect class="s-acc" x="728" y="210" width="182" height="48" rx="6"/><text class="ta" x="742" y="230">Clip + add noise</text><text class="tm" x="742" y="248">inside the bank · σ 0.5</text>
+        </g>
+        <g>
+          <rect class="bk5" x="936" y="20" width="224" height="252" rx="10"/><rect class="bk5h" x="936" y="20" width="224" height="38" rx="10"/><rect class="bk5h" x="936" y="44" width="224" height="14"/>
+          <text class="hdr" x="1048" y="45" text-anchor="middle">Bank 5 · rogue (test)</text>
+          <text class="tb" x="952" y="82">Private transactions</text><text class="tm" x="952" y="99">41,008 rows · stays inside</text>
+          <line class="s-ln" x1="966" y1="108" x2="966" y2="126" marker-end="url(#aa)"/><text class="tm" x="980" y="122">train on its own data</text>
+          <rect class="s-in" x="952" y="132" width="192" height="52" rx="6"/><text class="t" x="966" y="153">Local copy of the model</text><text class="tm" x="966" y="171">then sabotages it</text>
+          <line class="s-ln" x1="966" y1="186" x2="966" y2="204" marker-end="url(#aa)"/>
+          <rect class="s-red" x="952" y="210" width="192" height="48" rx="6"/><text class="tr" x="966" y="230">Poison: update ×−20</text><text class="tm" x="966" y="248">and claims 10× its size</text>
+        </g>
+
+        <!-- egress door band -->
+        <rect class="s-band" x="40" y="300" width="1120" height="38" rx="6"/>
+        <text class="tw" x="600" y="324" text-anchor="middle">EGRESS DOOR in every bank · only model updates pass · raw rows, account ids and amounts are refused and logged</text>
+        <line class="l1" x1="147" y1="272" x2="147" y2="296" marker-end="url(#aa)"/>
+        <line class="l2" x1="371" y1="272" x2="371" y2="296" marker-end="url(#aa)"/>
+        <line class="l3" x1="595" y1="272" x2="595" y2="296" marker-end="url(#aa)"/>
+        <line class="l4" x1="819" y1="272" x2="819" y2="296" marker-end="url(#aa)"/>
+        <line class="s-lnr" x1="1048" y1="272" x2="1048" y2="296" marker-end="url(#ar)"/>
+
+        <!-- updates to coordinator -->
+        <path class="l1" d="M147 338 C147 380, 470 380, 470 420" marker-end="url(#aa)"/>
+        <path class="l2" d="M371 338 C371 380, 540 380, 540 420" marker-end="url(#aa)"/>
+        <path class="l3" d="M595 338 L605 420" marker-end="url(#aa)"/>
+        <path class="l4" d="M819 338 C819 380, 670 380, 670 420" marker-end="url(#aa)"/>
+        <path class="s-lnr" d="M1048 338 C1048 380, 740 380, 740 420" marker-end="url(#ar)"/>
+        <rect class="s-acc" x="226" y="358" width="184" height="26" rx="13"/><text class="ta" x="318" y="376" text-anchor="middle">model updates: 21 numbers</text>
+        <rect class="s-red" style="stroke-dasharray:none" x="880" y="358" width="150" height="26" rx="13"/><text class="tr" x="955" y="376" text-anchor="middle">poisoned update</text>
+
+        <!-- left: no raw data -->
+        <rect class="s-red" x="40" y="430" width="340" height="190" rx="10"/>
+        <circle cx="76" cy="468" r="17" fill="none" stroke="var(--danger)" stroke-width="2.5"/>
+        <line x1="65" y1="457" x2="87" y2="479" stroke="var(--danger)" stroke-width="2.5"/><line x1="87" y1="457" x2="65" y2="479" stroke="var(--danger)" stroke-width="2.5"/>
+        <text class="tr" x="104" y="464" style="font-size:16px">No raw transaction data</text><text class="tr" x="104" y="484" style="font-size:16px">is ever shared</text>
+        <text class="t" x="60" y="518">Only 21 model numbers leave each bank,</text>
+        <text class="t" x="60" y="538">already clipped and noised.</text>
+        <text class="t" x="60" y="566">The door logs every message:</text>
+        <text class="tmono" x="60" y="590">rows_shared: 0 · params: 21</text>
+
+        <!-- coordinator -->
+        <rect class="s-acc" x="420" y="422" width="360" height="212" rx="10"/>
+        <rect x="440" y="442" width="34" height="40" rx="4" fill="var(--fg)"/><line x1="446" y1="454" x2="468" y2="454" stroke="var(--bg)" stroke-width="2"/><line x1="446" y1="463" x2="468" y2="463" stroke="var(--bg)" stroke-width="2"/><line x1="446" y1="472" x2="468" y2="472" stroke="var(--bg)" stroke-width="2"/>
+        <text class="th" x="488" y="458">Federated coordinator</text>
+        <text class="ti" x="488" y="478">runs on IBM LinuxONE (s390x)</text>
+        <text class="t" x="440" y="510">1. Screen out cheaters (size, weight, direction)</text>
+        <text class="t" x="440" y="534">2. Average the rest, weighted by bank size</text>
+        <text class="t" x="440" y="558">3. Build the new global model</text>
+        <text class="t" x="440" y="582">4. Send it back to every bank</text>
+        <text class="tr" x="440" y="614">✖ bank 5 excluded in 10 of 10 rounds</text>
+
+        <!-- right: how averaging + screening works -->
+        <rect class="s-yel" x="820" y="430" width="340" height="190" rx="10"/>
+        <text class="tb" x="840" y="462" style="font-size:16px">Federated averaging, with a guard</text>
+        <text class="t" x="840" y="490">Combines the banks' updates, weighted</text>
+        <text class="t" x="840" y="510">by how much data each bank has, capped</text>
+        <text class="t" x="840" y="530">at 2× a typical bank. An update that</text>
+        <text class="t" x="840" y="550">keeps pointing against the group's</text>
+        <text class="t" x="840" y="570">median is left out of that round.</text>
+        <text class="tm" x="840" y="598">FedAvg + FedProx-style local training</text>
+
+        <!-- return loop -->
+        <path class="s-dash" d="M600 634 L600 664"/>
+        <path class="s-dash" d="M24 664 L1176 664"/>
+        <path class="s-dash" d="M24 664 L24 160 L36 160" marker-end="url(#am)"/>
+        <path class="s-dash" d="M1176 664 L1176 160 L1164 160" marker-end="url(#am)"/>
+        <rect x="430" y="650" width="340" height="28" rx="14" fill="var(--bg)" stroke="var(--line2)"/>
+        <text class="tb" x="600" y="669" text-anchor="middle">Updated global model back to every bank</text>
+        <text class="tm" x="600" y="694" text-anchor="middle">repeat for 10 rounds · about 2 seconds per round on LinuxONE</text>
+
+        <!-- outputs -->
+        <rect class="s-box" x="150" y="716" width="280" height="64" rx="8"/><text class="tb" x="166" y="742">Regulator dashboard</text><text class="tm" x="166" y="762">live egress audit, rogue exclusions</text>
+        <rect class="s-box" x="460" y="716" width="280" height="64" rx="8"/><text class="tb" x="476" y="742">Red team</text><text class="tm" x="476" y="762">attacks the model to prove privacy</text>
+        <rect x="770" y="716" width="280" height="64" rx="8" fill="var(--llm-soft)" stroke="var(--llm)" stroke-width="1.5"/><text class="tb" x="786" y="742">AI report writer</text><text class="tm" x="786" y="762">ranks alerts, drafts the report</text>
+        <text class="tm" x="40" y="752">results go to:</text>
+      </svg>
+    </div>
+    <figcaption>Colored arrows are the only thing that leaves a bank. Bank 5 is a cheater we wrote ourselves to test the defense. Every box is a sandboxed container on one IBM LinuxONE machine.</figcaption>
+  </figure>
+
+  <ol class="steps">
+    <li><div><span class="where">data</span>IBM's public synthetic anti-money-laundering dataset (HI-Small): <strong class="num">5,078,345</strong> transactions, <strong class="num">5,177</strong> labelled laundering (1 in 981). Split by sending bank: the four busiest are our banks, the fifth plays the cheater.</div></li>
+    <li><div><span class="where">inside each bank</span>The bank turns each transaction into 20 clues (amount, currency change, payment type, time of day, how many people the sender pays…), computed only from its own data.</div></li>
+    <li><div><span class="where">inside each bank</span>It downloads the shared model (21 numbers), adjusts its copy on its own transactions, then clips the change and adds random noise. Nothing exact leaves.</div></li>
+    <li><div><span class="where">the egress door</span>One audited function is the only way out. It refuses anything that looks like rows, accounts or amounts, and logs every message with <span class="num">rows_shared: 0</span>.</div></li>
+    <li><div><span class="where">coordinator on LinuxONE</span>It screens every update (size limit, influence cap, odd-one-out check), averages the rest and sends the improved model back. Ten rounds take about 40 seconds.</div></li>
+    <li><div><span class="where">evaluation</span>The shared model is scored on each bank's own test transactions. We compare it with 13 other models: 3 kinds per bank and one trained on all data pooled.</div></li>
+    <li><div><span class="where">red team</span>We attack the update ourselves: can anyone tell whether one specific transaction was in a bank's data? We tuned the noise until the answer is near chance.</div></li>
+    <li><div><span class="where">alerts and reports</span>Each bank ranks its transactions for review; a small language model on the same CPU drafts the suspicious-activity report, and code checks every claim. A person decides.</div></li>
+  </ol>
+</section>
+</div>
+
+<div class="site">
+<section class="ch" id="dashboards">
+  <span class="chno">03 · THE DASHBOARDS</span>
+  <h2>What the regulator and the bank's investigator see</h2>
+  <span class="crit">Judging criteria <b>1 · Value</b> <b>3 · Technical design</b></span>
+  <div class="prose"><p>One web dashboard, served from the LinuxONE machine and reachable only through a private encrypted tunnel. Every number on it is read from a file the system wrote, and the footer names that file. The panels below are that dashboard, live: they read the files the system writes and refresh every 3 seconds.</p></div>
+
+  
+  <div class="persona-head"><div class="card"><span class="eyebrow">Persona 1 · the regulator</span><h3>"Prove to me no customer data moved."</h3><p>Live counters of everything that left each bank (<strong>rows shared: 0</strong>), the privacy budget, which bank was excluded in which round and why, and the red-team result.</p></div></div>
+</section>
+</div>
+
+<div class="dash">
+  <div class="livehead"><span>Live files on the LinuxONE machine:</span><div class="files">
+    <span class="pill" id="pill-status"><span class="dot"></span>status.json</span>
+    <span class="pill" id="pill-baselines"><span class="dot"></span>baselines.json</span>
+    <span class="pill" id="pill-redteam"><span class="dot"></span>redteam.json</span>
+    <span class="pill" id="pill-footprint"><span class="dot"></span>footprint.json</span>
+  </div></div>
+  <div id="banner">⚠ SAMPLE DATA — synthetic files for layout testing, not results from the VM</div>
+  <div class="grid">
+
+  <section class="panel wide" id="p-reg">
+    <h2>1 · Regulator view — egress audit <span class="note" id="reg-note">waiting for logs/egress</span></h2>
+    <div class="reg">
+      <div class="tile hero good" id="t-rows"><div class="lbl">Transaction rows shared</div><div class="val"><span class="ic">✔</span><span id="v-rows">0</span></div><div class="meta" id="m-rows">across all banks, all rounds</div></div>
+      <div class="tile"><div class="lbl">Model parameters shared</div><div class="val" id="v-params">—</div><div class="meta" id="m-params"></div></div>
+      <div class="tile"><div class="lbl">Messages</div><div class="val" id="v-msgs">—</div><div class="meta" id="m-msgs"></div></div>
+      <div class="tile" id="t-blocked"><div class="lbl">Blocked attempts</div><div class="val" id="v-blocked">—</div><div class="meta" id="m-blocked"></div></div>
+    </div>
+    <div class="tailwrap"><div class="card-title">Live egress tail · last 10 lines</div>
+      <div class="tail" id="tail"><div class="l"><span class="t">waiting for the first egress line…</span></div></div></div>
+  </section>
+
+  <section class="panel" id="p-train">
+    <h2>2 · Training — global model AUC per round <span class="note" id="train-note"></span></h2>
+    <div class="card"><div class="chartbox"><canvas id="aucChart"></canvas></div>
+      <div class="legendrow" id="auc-legend"></div></div>
+    <div class="card" style="padding:10px"><div id="train-table" style="max-height: 150px; overflow:auto;"></div></div>
+  </section>
+
+  <section class="panel" id="p-priv">
+    <h2>3 · Privacy — ε spent <span class="note">approximate, update-level Gaussian composition over rounds</span></h2>
+    <div id="priv-body" class="waiting">waiting for status.json</div>
+  </section>
+
+  <section class="panel" id="p-rogue">
+    <h2>4 · Rogue bank — accepted / excluded per round <span class="note" id="rogue-note"></span></h2>
+    <div id="rogue-head"></div>
+    <div id="ap-wrap" style="display:none"><div class="card"><div class="chartbox" style="height:180px"><canvas id="apChart"></canvas></div>
+      <div id="ap-note" style="color:var(--ink-2); font-size:12px; margin:6px 0 0"></div></div></div>
+    <div id="rogue-body" class="waiting">waiting for status.json</div>
+  </section>
+
+  <section class="panel" id="p-red">
+    <h2>5 · Red team — can an attacker tell a row was used? <span class="note">synthetic attack by our own team</span></h2>
+    <div id="red-body" class="waiting">waiting for redteam.json</div>
+  </section>
+
+  <section class="panel wide" id="p-foot">
+    <h2>6 · Footprint on LinuxONE <span class="note">measured with docker stats, not estimated</span></h2>
+    <div id="foot-body" class="waiting">waiting for footprint.json</div>
+  </section>
+
+  </div>
+</div>
+
+<div class="site">
+<section class="ch" aria-label="Persona 2">
+  <div class="persona-head"><div class="card"><span class="eyebrow">Persona 2 · the bank's AML investigator</span><h3>"Show me what to look at first, and why."</h3><p>A ranked review queue of flagged transactions, each with a label, the banks involved, and a drafted report whose every fact was written by code.</p></div></div>
+</section>
+</div>
+
+<div class="dash">
+  <div class="grid">
+
+  <section class="panel wide" id="p-alerts">
+    <h2>7 · Alert queue and report <span class="note">ranked for analyst review, not a finding · synthetic data</span></h2>
+    <div id="alerts-body" class="waiting">waiting for alerts.json</div>
+  </section>
+
+  </div>
+</div>
+
+<div class="site">
+<section class="ch" aria-label="How an alert is flagged">
+  <h3>How an alert is generated and flagged</h3>
+  <div class="flow" role="list" aria-label="Alert pipeline">
+    <span class="st" role="listitem">Shared model scores every transaction (0 to 1)</span><span class="ar">→</span>
+    <span class="st" role="listitem">Drop same-account currency swaps and single-bank chains</span><span class="ar">→</span>
+    <span class="st" role="listitem">Rank the review queue (top 20)</span><span class="ar">→</span>
+    <span class="st" role="listitem">Flag: banks involved, label, amount</span><span class="ar">→</span>
+    <span class="st" role="listitem">Code writes every fact of the report</span><span class="ar">→</span>
+    <span class="st llm" role="listitem">LLM writes one assessment paragraph</span><span class="ar">→</span>
+    <span class="st" role="listitem">Code checks each claim; false → template</span><span class="ar">→</span>
+    <span class="st hum" role="listitem">Investigator decides</span>
+  </div>
+  <p class="muted" style="max-width:90ch">In our run, 2 of the top 20 alerts are real laundering, about 56 times the 1-in-565 base rate of the review sample. On our three recorded reports, the claim check rejected two of the LLM's drafts and the template wrote them instead.</p>
+
+</section>
+</div>
+
+<div class="dash">
+  <footer class="panel wide" id="p-evidence">
+  <h2>Evidence — where every number in the live panels comes from <span class="note" id="ev-note"></span></h2>
+  <div id="ev-body" class="waiting">waiting for /api/state</div>
+</footer>
+</div>
+
+<div class="site">
+<section class="ch" id="demo">
+  <span class="chno">04 · DEMO</span>
+  <h2>Run it yourself: a replay of our recorded run</h2>
+  <p class="replay-tag"><strong>Replay of the recorded run on IBM LinuxONE, 17 Oct 2026 — nothing is trained in your browser</strong></p>
+  <span class="crit">Judging criterion <b>4 · Execution and pitch</b></span>
+  <div class="demo">
+    <div class="replay" role="note"><span aria-hidden="true">▶</span><span><strong>Replay, not a live connection.</strong> Every number below comes from the files our system wrote on IBM LinuxONE on 17 October 2026 (models fingerprinted <span class="num">f12fcda7</span> and <span class="num">16ef90c0</span>). Nothing is trained in your browser; the buttons switch between the runs we recorded.</span></div>
+
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Which recorded run">
+        <button type="button" data-mode="dpon" aria-pressed="true">Privacy noise on</button>
+        <button type="button" data-mode="dpoff" aria-pressed="false">No noise</button>
+        <button type="button" data-mode="rogue_on" aria-pressed="false">Cheater + defense on</button>
+        <button type="button" data-mode="rogue_off" aria-pressed="false">Cheater + defense off</button>
+      </div>
+      <button type="button" class="btn" id="play">▶ Play 10 rounds</button>
+      <button type="button" class="btn ghost" id="step">Next round</button>
+      <button type="button" class="btn danger" id="leak">Bank 1 tries to send raw rows</button>
+    </div>
+
+    <div class="dgrid">
+      <div class="panel">
+        <h3>Regulator view · round <span id="rnd" class="num">0</span> of 10</h3>
+        <div class="kpis">
+          <div class="kpi ok"><span class="l">rows shared</span><span class="v" id="k-rows">0</span></div>
+          <div class="kpi"><span class="l">messages</span><span class="v" id="k-msg">0</span></div>
+          <div class="kpi"><span class="l">numbers shared</span><span class="v" id="k-par">0</span></div>
+          <div class="kpi" id="k-blk-box"><span class="l">blocked attempts</span><span class="v" id="k-blk">0</span></div>
+        </div>
+        <div class="banks" id="banks"></div>
+        <div class="log" id="log" aria-live="polite"><span class="muted">Press Play or Next round.</span></div>
+      </div>
+      <div class="panel">
+        <h3 id="chart-title">Shared model quality per round</h3>
+        <div class="chartbox" id="chart"></div>
+        <div class="verdict" id="mode-note"></div>
+      </div>
+    </div>
+
+    <div class="dgrid">
+      <div class="panel">
+        <h3>Red team: can an attacker tell a transaction was used?</h3>
+        <div class="seg" role="group" aria-label="Noise level for the attack">
+          <button type="button" data-rt="DP off" aria-pressed="false">No noise</button>
+          <button type="button" data-rt="σ 0.3" aria-pressed="false">σ 0.3</button>
+          <button type="button" data-rt="σ 0.5" aria-pressed="true">σ 0.5 (our setting)</button>
+          <button type="button" data-rt="σ 0.8" aria-pressed="false">σ 0.8</button>
+        </div>
+        <div class="chartbox" id="rtchart"></div>
+        <div class="verdict" id="rtnote"></div>
+      </div>
+      <div class="panel">
+        <h3>Investigator: click an alert</h3>
+        <div class="qwrap"><table class="q" id="queue"><thead><tr><th>rank</th><th>alert</th><th class="r">score</th><th class="r">banks</th><th>label</th></tr></thead><tbody></tbody></table></div>
+        <div class="sar" id="sar"></div>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+
+<div class="site">
+<section class="ch" id="scorecard">
+  <span class="chno">HOW THIS MAPS TO THE JUDGING</span>
+  <h2>Evidence for each criterion</h2>
+  <div class="score">
+    <div class="card"><span class="eyebrow">1 · Value and theme fit</span><h3>A real, unsolved problem</h3><ul><li>Cross-bank laundering is invisible to any single bank.</li><li>Data pooling was shut down (TMNL, 2024); this keeps data in place.</li><li>"AI Secured" in every layer: data, identities, model, system.</li></ul></div>
+    <div class="card"><span class="eyebrow">2 · Novelty</span><h3>End to end, written during the event</h3><ul><li>Federated learning + noise inside each bank + cheater screening + attacking ourselves + an AI writer with a claim check, in one pipeline.</li><li>Noise level chosen by our own attack, not by a guess.</li><li>All code written in the 24 hours; open-source libraries listed.</li></ul></div>
+    <div class="card"><span class="eyebrow">3 · Technical design and LinuxONE</span><h3>Both IBM labs, on s390x</h3><ul><li><strong>Predictive, multi-model:</strong> 14 models compared (logistic regression, random forest, gradient boosting per bank, pooled, federated).</li><li><strong>Predictive + generative:</strong> Qwen2.5 on llama.cpp, built from source for big-endian s390x.</li><li>Sandboxed containers, one audited egress door, tunnel-only dashboard.</li><li>Measured: 1,880 MB for all containers, 2.1 s per round.</li></ul></div>
+    <div class="card"><span class="eyebrow">4 · Execution and pitch</span><h3>Working, reproducible, honest</h3><ul><li>≤ 3-minute video with a live run on the LinuxONE machine.</li><li>Re-running training reproduced the exact same model, bit for bit.</li><li>Every number traceable to a file; limits stated plainly.</li></ul></div>
+  </div>
+
+  <h3>Proof it runs on IBM LinuxONE</h3>
+  <pre class="term" aria-label="Terminal capture from the LinuxONE machine"><span class="p">$</span> uname -a
+Linux dataholics 6.8.0-147-generic #147-Ubuntu SMP … <span class="g">s390x s390x s390x</span> GNU/Linux
+<span class="p">$</span> lscpu | head
+Architecture:  <span class="g">s390x</span>        Byte Order: Big Endian      CPU(s): 3
+Vendor ID:     IBM/S390     Machine type: 9175          Hypervisor: z/VM 7.3.0
+<span class="p">$</span> docker ps                       <span class="muted"># captured 2026-10-17 22:03 UTC, during training</span>
+NAMES         IMAGE    STATUS                    PORTS
+bank1         fedaml   Up 4 seconds
+bank2         fedaml   Up 4 seconds
+bank3         fedaml   Up 4 seconds
+bank4         fedaml   Up 4 seconds
+coordinator   fedaml   Up 10 seconds (healthy)   127.0.0.1:8000->8000/tcp
+dashboard     fedaml   Up 33 minutes             127.0.0.1:8050->8050/tcp
+<span class="p">$</span> docker stats --no-stream
+bank1   65.67% CPU   314.3MiB / 7.821GiB      coordinator   10.61% CPU   122.8MiB / 7.821GiB</pre>
+
+  <h3>Honest limits</h3>
+  <ul class="limits">
+    <li>The data and the attacks are synthetic. No real customer appears anywhere.</li>
+    <li>Privacy noise costs accuracy: AUC 0.992 → 0.982 and precision 0.248 → 0.065. We report the price.</li>
+    <li>The formal privacy bound at our setting (ε ≈ 46) is loose; the measured attack is the evidence.</li>
+    <li>The cheater screen is evaluated without privacy noise, because noise also hides a cheater. A subtler label-flipping cheater passes but costs only 0.034 AUC.</li>
+    <li>Bank 1's laundering cannot be detected from single transactions by any model; we report it separately instead of hiding it.</li>
+  </ul>
+</section>
+<footer>Team Dataholics, UT Dallas · IBM Z Datathon 2026 · Data: IBM Transactions for Anti Money Laundering (HI-Small, synthetic) · Containers on IBM LinuxONE, s390x · Code: github.com/pedduvedcharan/dataholics-federated-aml</footer>
+</div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtInt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-US');
+const f3 = x => (x == null || isNaN(x)) ? '—' : Number(x).toFixed(3);
+const f2 = x => (x == null || isNaN(x)) ? '—' : Number(x).toFixed(2);
+const kb = b => b == null ? '—' : (b < 1024 ? b + ' B' : (b / 1024).toFixed(1) + ' KB');
+const hhmmss = iso => { try { return new Date(iso).toLocaleTimeString('en-GB', {hour12:false, timeZone:'UTC'}); } catch (e) { return '—'; } };
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+if (typeof Chart !== 'undefined') { Chart.defaults.font.family = '"IBM Plex Sans", Arial, sans-serif'; Chart.defaults.font.size = 12; Chart.defaults.color = '#525252'; }
+
+function setPill(id, info, label) {
+  const p = $(id); if (!p) return;
+  const ok = info && info.present;
+  p.className = 'pill ' + (ok ? 'on' : 'off');
+  p.innerHTML = '<span class="dot"></span>' + esc(label) + (ok && info.age_s != null ? ' · ' + (info.age_s < 90 ? Math.round(info.age_s) + 's' : Math.round(info.age_s / 60) + 'm') : ' · missing');
+}
+
+/* ---------- 1. regulator view ---------- */
+function renderRegulator(s) {
+  const eg = s.egress || {}; const t = eg.totals || {}; const pb = eg.per_bank || {};
+  const banks = Object.keys(pb).length;
+  const rows = t.rows_shared || 0;
+  $('v-rows').textContent = fmtInt(rows);
+  $('t-rows').className = 'tile hero ' + (rows === 0 ? 'good' : 'crit');
+  $('m-rows').textContent = banks ? `${banks} bank${banks > 1 ? 's' : ''} audited · ${fmtInt(t.messages || 0)} updates inspected` : 'across all banks, all rounds';
+  $('v-params').textContent = fmtInt(t.params_shared);
+  $('m-params').textContent = t.bytes ? `${kb(t.bytes)} of clipped + noised weight deltas` : '';
+  $('v-msgs').textContent = fmtInt(t.messages);
+  $('m-msgs').textContent = banks ? Object.entries(pb).map(([b, e]) => `b${b}:${e.messages}`).join(' ') : 'no model updates yet';
+  const bl = t.blocked || 0;
+  $('v-blocked').textContent = fmtInt(bl);
+  $('t-blocked').className = 'tile ' + (bl > 0 ? 'crit' : '');
+  $('m-blocked').textContent = bl > 0 ? 'raw rows refused at the egress door' : 'no violation attempted yet';
+  $('reg-note').textContent = banks ? `logs/egress · ${s.files && s.files['logs/egress'] ? s.files['logs/egress'].n_files : banks} files` : 'waiting for logs/egress';
+
+  const tail = (eg.tail || []).slice(-10);
+  if (!tail.length) {   // logs archived between takes: clear the old lines instead of leaving them on screen
+    $('tail').innerHTML = '<div class="l"><span class="t">waiting for the first egress line…</span></div>';
+  } else {
+    $('tail').innerHTML = tail.map(r => {
+      const kind = r.kind || '?';
+      let body;
+      if (kind === 'blocked') body = `<span class="k">BLOCKED</span> bank ${esc(r.bank_id)} r${esc(r.round)} — ${esc(r.reason || '')}`;
+      else if (kind === 'send_failed') body = `<span class="k">send_failed</span> bank ${esc(r.bank_id)} r${esc(r.round)} — ${esc(r.error || '')}`;
+      else body = `<span class="k">${esc(kind)}</span> bank ${esc(r.bank_id)} r${esc(r.round)} · ${kb(r.bytes)} · params=${esc(r.params_shared)} rows=${esc(r.rows_shared)} · sha ${esc(String(r.sha256 || '').slice(0, 10))}`;
+      const cls = kind === 'blocked' ? 'blocked' : (kind === 'send_failed' ? 'failed' : '');
+      return `<div class="l ${cls}"><span class="t">${hhmmss(r.ts)}</span><span>${body}</span></div>`;
+    }).join('');
+  }
+}
+
+/* ---------- 2. training chart ---------- */
+let aucChart = null;
+const endLabel = {  // direct-label the last point of selected datasets
+  id: 'endLabel',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    ctx.save(); ctx.font = '500 12px "IBM Plex Sans", Arial, sans-serif'; ctx.textBaseline = 'middle';
+    const used = [];   // y positions already labelled; skip a label that would overlap (tooltip + legend still carry it)
+    chart.data.datasets.forEach((ds, i) => {
+      if (!ds.endLabel) return;
+      const meta = chart.getDatasetMeta(i); if (!meta.data.length || meta.hidden) return;
+      const pt = meta.data[meta.data.length - 1]; const y = pt.y + (ds.endOffset || 0);
+      if (used.some(u => Math.abs(u - y) < 13)) return;
+      used.push(y);   // Gray 100 text for contrast; the line's own colored last point is the swatch
+      ctx.fillStyle = css('--ink'); ctx.fillText(ds.endLabel, pt.x + 8, y);
+    });
+    ctx.restore();
+  }
+};
+function isLocalDP(dp) {   // MASTER 16:20: default is local DP (banks noise before egress)
+  if (!dp) return false;
+  if (dp.mode) return String(dp.mode).toLowerCase() === 'local';
+  return dp.noise_added_by ? String(dp.noise_added_by).toLowerCase() !== 'coordinator' : true;
+}
+function rogueSet(st) {   // the designated rogue bank(s): status.rogue_bank(s) if written, else bank 5 (CONTRACTS §2)
+  const ids = (st && (st.rogue_banks || (st.rogue_bank != null ? [st.rogue_bank] : null))) || [5];
+  return new Set(ids.map(String));
+}
+function yMin(datasets) {   // zoom the y-axis to the data (floor 0.5) so lines near 0.98 do not stack into one
+  const v = datasets.flatMap(d => d.data).filter(x => typeof x === 'number');
+  if (!v.length) return 0.5;
+  return Math.max(0.5, Math.floor((Math.min(...v) - 0.02) * 20) / 20);
+}
+function bestLocal(bank) {  // best single-model AUC for a bank from baselines.json, pooled basis (own-test .auc as fallback)
+  let best = null;
+  for (const [m, v] of Object.entries(bank || {})) {
+    if (!v || typeof v !== 'object') continue;
+    const a = typeof v.pooled_auc === 'number' ? v.pooled_auc : v.auc;
+    if (typeof a === 'number' && (!best || a > best.auc)) best = { model: m, auc: a, basis: typeof v.pooled_auc === 'number' ? 'pooled' : 'own test' };
+  }
+  return best;
+}
+function renderTraining(s) {
+  const st = s.status, bl = s.baselines;
+  const rounds = (st && Array.isArray(st.rounds)) ? st.rounds.filter(r => r && r.round != null) : [];
+  const labels = rounds.map(r => 'r' + r.round);
+  // MASTER 15:55: when status.json carries eval_banks, global_auc/global_ap ARE the pooled score over those banks' test sets.
+  const evalBanks = (st && Array.isArray(st.eval_banks) && st.eval_banks.length) ? st.eval_banks.map(String) : null;
+  let pooledKey = ['pooled_auc', 'pooled_bank_auc', 'bank_pooled_auc'].find(k => rounds.some(r => typeof r[k] === 'number')) || null;
+  let pooledApKey = pooledKey ? pooledKey.replace('auc', 'ap') : null;
+  if (!pooledKey && evalBanks) { pooledKey = 'global_auc'; pooledApKey = 'global_ap'; }
+  const auc = rounds.map(r => pooledKey ? r[pooledKey] : r.global_auc);
+  const evalTxt = evalBanks ? `banks ${evalBanks.join(',')}` : 'banks';
+  const mainLabel = pooledKey ? `Global model · AUC pooled over ${evalTxt}' test sets` : 'Global model AUC (global_test, control only)';
+  const hasControl = pooledKey && pooledKey !== 'global_auc' && rounds.some(r => typeof r.global_auc === 'number');
+  const rogueIds = rogueSet(st);
+  const exCount = {}; rounds.forEach(r => (r.excluded || []).forEach(e => { exCount[e.bank_id] = (exCount[e.bank_id] || 0) + 1; }));
+  const notLearnable = b => !!(evalBanks && !evalBanks.includes(String(b)) && !rogueIds.has(String(b)));
+  const isRogue = b => rogueIds.has(String(b));
+  const n = Math.max(labels.length, 2);
+  const flat = v => Array(n).fill(v);
+  const xs = labels.length >= 2 ? labels : (labels.length === 1 ? [labels[0], ''] : ['r1', 'r2']);
+  const datasets = [{ label: mainLabel, data: auc, borderColor: css('--s1'), backgroundColor: css('--s1'),
+    borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: 0.15, endLabel: auc.length ? f3(auc[auc.length - 1]) : '' }];
+  const legend = [{ c: css('--s1'), t: pooledKey ? `global federated model, AUC pooled over ${evalTxt}' own test sets` : 'global federated model AUC (global_test, control only)' }];
+  if (hasControl) {
+    datasets.push({ label: 'global_test (control only)', data: rounds.map(r => r.global_auc), borderColor: css('--s7'), borderWidth: 1, pointRadius: 2, borderDash: [2, 3], tension: 0.15 });
+    legend.push({ c: css('--s7'), t: 'same model on global_test.csv (control only)' });
+  }
+  if (bl) {
+    const cl = bl.centralized_logreg || {};
+    const c = typeof cl.auc === 'number' ? cl.auc : cl.pooled_auc;   // MODELS: centralized .auc IS the pooled number
+    if (typeof c === 'number') {
+      datasets.push({ label: 'Centralized pooling logreg (all banks\' raw rows)', data: flat(c), borderColor: css('--s2'), borderWidth: 1.5, pointRadius: 0, borderDash: [6, 4], endLabel: f3(c) });
+      legend.push({ c: css('--s2'), t: 'centralized pooling logreg (all banks\' raw rows) ' + f3(c) });
+    }
+    const fd = bl.federated || {};
+    const fv = typeof fd.auc === 'number' ? fd.auc : fd.pooled_auc;
+    if (typeof fv === 'number') {
+      datasets.push({ label: 'Federated final (baselines.json)', data: flat(fv), borderColor: css('--s3'), borderWidth: 1.5, pointRadius: 0, borderDash: [2, 3] });
+      legend.push({ c: css('--s3'), t: 'federated final model as scored by MODELS ' + f3(fv) });
+    }
+    const locals = Object.entries(bl.per_bank || {}).filter(([b]) => !notLearnable(b) && !isRogue(b) && (!evalBanks || evalBanks.includes(String(b)))).map(([b, m]) => [b, bestLocal(m)]).filter(x => x[1]);
+    locals.forEach(([b, v], i) => datasets.push({ label: `Bank ${b} best local (${v.model}, ${v.basis})`, data: flat(v.auc), borderColor: css('--muted'),
+      borderWidth: 1, pointRadius: 0, endLabel: i === 0 ? 'one bank' : '', endOffset: 0 }));
+    if (locals.length) legend.push({ c: css('--muted'), t: `each bank alone (${locals[0][1].basis} basis), best of logreg/rf/hgb: ` + locals.map(([b, v]) => `b${b} ${f3(v.auc)}`).join(' · ') });
+  }
+  $('auc-legend').innerHTML = legend.map(l => `<span><span class="sw" style="border-color:${l.c}"></span>${esc(l.t)}</span>`).join('');
+  $('train-note').textContent = st ? `round ${st.round ?? '?'} of ${st.total_rounds ?? '?'}` + (st.dp && st.dp.enabled ? ' · DP on' : ' · DP off') + (pooledKey ? ` · metric: pooled over ${evalTxt}' test.csv` : ' · metric: global_test.csv (control only)') : 'waiting for status.json';
+
+  if (typeof Chart === 'undefined') { $('aucChart').parentElement.innerHTML = '<div class="waiting">Chart.js not loaded (no CDN access) — see table below</div>'; }
+  else if (!aucChart) {
+    aucChart = new Chart($('aucChart'), { type: 'line', data: { labels: xs, datasets }, plugins: [endLabel], options: {
+      animation: false, responsive: true, maintainAspectRatio: false, layout: { padding: { right: 66 } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${f3(c.parsed.y)}` } } },
+      scales: { x: { grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') } },
+                y: { min: yMin(datasets), max: 1.0, grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') },
+                     title: { display: true, text: pooledKey ? `ROC AUC, pooled over ${evalTxt}` : 'ROC AUC, global_test (control)', color: css('--muted'), font: { size: 11 } } } } } });
+  } else { aucChart.options.scales.y.min = yMin(datasets); aucChart.data.labels = xs; aucChart.data.datasets = datasets; aucChart.options.scales.y.title.text = pooledKey ? `ROC AUC, pooled over ${evalTxt}` : 'ROC AUC, global_test (control)'; aucChart.update('none'); }
+
+  if (rounds.length) {
+    const banks = Object.keys(rounds[rounds.length - 1].per_bank_auc || {});
+    const aucHdr = pooledKey ? `pooled AUC (${evalTxt})` : 'AUC (global_test, control)';
+    const nl = banks.filter(notLearnable), rg = banks.filter(isRogue);
+    const note = (nl.length || rg.length) ? `<div style="color:var(--muted); font-size:11px; margin:4px 0 2px">${nl.length ? `* bank ${nl.join(', ')}: AUC ≈ 0.5 is real, not a bug — its laundering is not learnable with per-row features (see docs); excluded from the pooled score (eval_banks = ${evalBanks.join(',')})${nl.some(b => exCount[b]) ? '; also excluded by the defense in ' + nl.filter(b => exCount[b]).map(b => `${exCount[b]}/${rounds.length} rounds`).join(', ') : ''}. ` : ''}${rg.length ? `† bank ${rg.join(', ')}: the rogue bank (synthetic attack); the score shown is its own poisoned model${rg.some(b => exCount[b]) ? ', excluded by the defense in ' + rg.map(b => `${exCount[b] || 0}/${rounds.length}`).join(', ') + ' rounds' : ''}.` : ''}</div>` : '';
+    $('train-table').innerHTML = note + `<table><tr><th>round</th><th class="num">${aucHdr}</th><th class="num">AP</th>${hasControl ? '<th class="num">global_test (control)</th>' : ''}${banks.map(b => `<th class="num">b${esc(b)} AUC${notLearnable(b) ? ' *' : isRogue(b) ? ' †' : ''}</th>`).join('')}</tr>` +
+      rounds.slice().reverse().map(r => `<tr><td>${esc(r.round)}</td><td class="num">${f3(pooledKey ? r[pooledKey] : r.global_auc)}</td><td class="num">${f3(pooledKey ? r[pooledApKey] : r.global_ap)}</td>${hasControl ? `<td class="num">${f3(r.global_auc)}</td>` : ''}${banks.map(b => `<td class="num">${f3((r.per_bank_auc || {})[b])}</td>`).join('')}</tr>`).join('') + '</table>';
+  } else $('train-table').innerHTML = '<div class="waiting">no rounds completed yet</div>';
+}
+
+/* ---------- 3. privacy budget ---------- */
+function renderPrivacy(s) {
+  // MASTER 16:10: show the honest ε against the run's planned total; no "exhausted" red state; budget only as an optional policy tick.
+  const st = s.status; const budget = (typeof s.eps_budget === 'number' && s.eps_budget > 0) ? s.eps_budget : null;
+  if (!st || !st.dp) { $('priv-body').className = 'waiting'; $('priv-body').textContent = 'waiting for status.json'; return; }
+  const dp = st.dp; const eps = typeof dp.epsilon_spent === 'number' ? dp.epsilon_spent : null;
+  const rDone = Number(st.round) || 0, rTotal = Number(st.total_rounds) || 0;
+  let planned = typeof dp.epsilon_planned_total === 'number' ? dp.epsilon_planned_total : null;
+  let plannedSrc = 'dp.epsilon_planned_total';
+  if (planned == null && eps != null && rDone > 0 && rTotal > 0) { planned = eps * rTotal / rDone; plannedSrc = `ε spent × ${rTotal} / ${rDone} rounds (estimate)`; }
+  const frac = (eps == null || !planned) ? 0 : Math.min(1, eps / planned);
+  const cls = frac >= 0.5 ? 'warn' : '';
+  const stateTxt = !dp.enabled ? '<span class="tag bad">DP OFF — unprotected run</span>' : `<span class="tag ok">DP on · round ${esc(rDone)} of ${esc(rTotal)}</span>`;
+  const scaleMax = planned ? planned : (budget || 1);
+  const tick = (budget && planned) ? `<div style="position:absolute; top:-3px; bottom:-3px; left:${Math.min(100, 100 * budget / scaleMax).toFixed(1)}%; width:2px; background:var(--ink); border-radius:2px" title="policy budget ${budget}"></div>` : '';
+  $('priv-body').className = '';
+  $('priv-body').innerHTML = `
+    <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap"><span class="big">ε spent ≈ ${eps == null ? '—' : f2(eps)}</span><span style="color:var(--ink-2)">(approximate)</span>${stateTxt}</div>
+    <div class="meter"><div class="bar" style="position:relative"><div class="fill ${cls}" style="width:${(frac * 100).toFixed(1)}%"></div>${tick}</div>
+      <div class="ticks"><span>0</span><span>${planned ? 'planned total for this run ≈ ' + f2(planned) + (plannedSrc.startsWith('dp.') ? '' : ' (projected)') : (dp.enabled ? 'planned total: waiting for round 1' : 'no noise in this run')}${budget ? ' · policy budget ' + budget + ' (dashboard override)' : ''}</span></div></div>
+    <div class="strip">
+      <div class="cell"><div class="k">Noise multiplier σ</div><div class="v">${esc(dp.sigma ?? '—')}</div><div class="m">(Gaussian std = σ · clip)</div></div>
+      <div class="cell"><div class="k">Clip norm (L2)</div><div class="v">${esc(dp.clip_norm ?? '—')}</div><div class="m">per update, applied inside the bank</div></div>
+      <div class="cell"><div class="k">δ</div><div class="v">${esc(dp.delta ?? '—')}</div></div>
+      <div class="cell"><div class="k">ε spent ≈</div><div class="v">${eps == null ? '—' : f2(eps)}</div><div class="m">approximate</div></div>
+      <div class="cell"><div class="k">Planned ε ≈</div><div class="v">${planned ? f2(planned) : '—'}</div><div class="m">${planned ? (plannedSrc.startsWith('dp.') ? 'planned total for this run' : 'projected') : ''}</div></div>
+    </div>
+    <dl class="kv" style="margin-top:14px">
+      <dt>Rounds composed</dt><dd>${esc(st.round ?? '—')} of ${esc(st.total_rounds ?? '—')}</dd>
+      ${dp.enabled ? `<dt>DP mode</dt><dd>${isLocalDP(dp) ? 'local · noise added inside each bank, before egress' : 'central · noise added by the coordinator'}</dd>` : ''}
+    </dl>
+    <p style="color:var(--ink-2); font-size:12.5px; margin:12px 0 0">${!dp.enabled
+      ? 'This run has DP off: updates are clipped but not noised, so no ε is spent. It is the unprotected comparison for the red team.'
+      : (isLocalDP(dp)
+          ? 'Each bank clips its weight delta to the L2 norm above and adds the Gaussian noise before the update leaves; the coordinator never sees an un-noised update.'
+          : 'Each bank clips its weight delta to the L2 norm above; the coordinator adds calibrated Gaussian noise to every accepted update before averaging (central DP-FedAvg).')
+        + ' ε is approximate: update-level Gaussian composition over rounds; per-record guarantees would need DP-SGD inside each bank (stretch). The formal ε bound is loose at these settings and stated as such; the measured attack on this run is in the red-team panel.'
+        + (dp.epsilon_note ? ' Coordinator note: ' + esc(dp.epsilon_note) : '')}</p>`;
+}
+
+/* AP per round, defense off vs on (MASTER 18:45 B): the AP collapse is the visible damage */
+let apChart = null;
+function renderApChart(s) {
+  const off = s.status_rogue_off, on = s.status_rogue_on;
+  const ok = x => x && Array.isArray(x.rounds) && x.rounds.length;
+  if (!ok(off) || !ok(on) || typeof Chart === 'undefined') { $('ap-wrap').style.display = 'none'; return; }
+  $('ap-wrap').style.display = '';
+  const n = Math.max(off.rounds.length, on.rounds.length);
+  const labels = Array.from({ length: n }, (_, i) => 'r' + (i + 1));
+  const ser = x => labels.map((_, i) => (x.rounds[i] && typeof x.rounds[i].global_ap === 'number') ? x.rounds[i].global_ap : null);
+  const dOff = ser(off), dOn = ser(on);
+  const lastV = d => { for (let i = d.length - 1; i >= 0; i--) if (d[i] != null) return d[i]; return null; };
+  const datasets = [
+    { label: 'defense on: rogue screened out', data: dOn, borderColor: css('--good'), backgroundColor: css('--good'), borderWidth: 2, pointRadius: 3, tension: 0.15, endLabel: `on ${f3(lastV(dOn))}` },
+    { label: 'defense off: poisoned update averaged in', data: dOff, borderColor: css('--serious'), backgroundColor: css('--serious'), borderWidth: 2, pointRadius: 3, tension: 0.15, endLabel: `off ${f3(lastV(dOff))}` },
+  ];
+  const ymax = Math.max(0.05, ...dOff.concat(dOn).filter(v => v != null)) * 1.15;
+  if (!apChart) {
+    apChart = new Chart($('apChart'), { type: 'line', data: { labels, datasets }, plugins: [endLabel], options: {
+      animation: false, responsive: true, maintainAspectRatio: false, layout: { padding: { right: 72 } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: true, position: 'top', align: 'start', labels: { color: css('--ink-2'), boxWidth: 14, boxHeight: 2, font: { size: 11 } } },
+                 tooltip: { callbacks: { label: c => `${c.dataset.label}: AP ${f3(c.parsed.y)}` } } },
+      scales: { x: { grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') } },
+                y: { min: 0, max: ymax, grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') },
+                     title: { display: true, text: 'AP', color: css('--muted'), font: { size: 11 } } } } } });
+  } else { apChart.data.labels = labels; apChart.data.datasets = datasets; apChart.options.scales.y.max = ymax; apChart.update('none'); }
+  const la = x => x.rounds[x.rounds.length - 1].global_auc;
+  const lp = x => x.rounds[x.rounds.length - 1].global_ap;
+  $('ap-note').textContent = `AP per round with rogue bank present (AP = precision on the rare laundering class). Final AUC: defense off ${f3(la(off))} · defense on ${f3(la(on))}; final AP: off ${f3(lp(off))} · on ${f3(lp(on))}. Both runs: DP off.`;
+}
+
+/* ---------- 4. rogue bank ---------- */
+function renderRogue(s) {
+  try { renderApChart(s); } catch (e) { $('ap-wrap').style.display = 'none'; }
+  let st = s.status; let src = 'status.json';
+  const hasEx = x => x && Array.isArray(x.rounds) && x.rounds.some(r => (r.excluded || []).length);
+  if (!hasEx(st) && hasEx(s.status_rogue_on)) { st = s.status_rogue_on; src = 'status_rogue_on.json'; }
+  const rounds = (st && Array.isArray(st.rounds)) ? st.rounds : [];
+  if (!rounds.length) { $('rogue-head').innerHTML = ''; $('rogue-body').className = 'waiting'; $('rogue-body').textContent = 'waiting for completed rounds'; return; }
+  const rogues = rogueSet(st);
+  const exCount = {}; rounds.forEach(r => (r.excluded || []).forEach(e => { exCount[e.bank_id] = (exCount[e.bank_id] || 0) + 1; }));
+  const summary = Object.entries(exCount).map(([b, c]) => `${rogues.has(String(b)) ? 'rogue ' : 'honest '}bank ${b} excluded in ${c}/${rounds.length} rounds`).join(' · ') || 'no exclusions so far';
+  let cmp = '';
+  const off = s.status_rogue_off, on = s.status_rogue_on;
+  const last = x => (x && Array.isArray(x.rounds) && x.rounds.length) ? x.rounds[x.rounds.length - 1] : null;
+  const exN = (x, b) => (x && Array.isArray(x.rounds)) ? x.rounds.filter(r => (r.excluded || []).some(e => String(e.bank_id) === String(b))).length : 0;
+  const nR = x => (x && Array.isArray(x.rounds)) ? x.rounds.length : 0;
+  const rg = [...rogues][0];
+  if (last(off) && last(on)) {
+    // MASTER 16:12: AP collapse is the visible damage; show AUC and AP side by side
+    const kcard = (name, x, chip) => { const l = last(x); return `<div class="tile"><div class="lbl">${name}</div><div class="val">${f3(l.global_ap)}</div><div class="unit">AP (precision on rare laundering)</div><div class="meta">AUC ${f3(l.global_auc)} · bank ${esc(rg)} excluded ${exN(x, rg)}/${nR(x)}</div><div style="margin-top:8px">${chip}</div></div>`; };
+    cmp = `<div class="small" style="margin-top:14px">final round, rogue bank ${esc(rg)} present</div><div class="kpis2" style="margin-top:6px">`
+      + kcard('defense off', off, '<span class="tag bad">✖ poisoned update averaged in</span>')
+      + kcard('defense on', on, '<span class="tag ok">✔ rogue screened out</span>') + '</div>';
+  }
+  const dpTxt = st.dp ? (st.dp.enabled ? ` · DP on (σ ${st.dp.sigma})` : ' · defense evaluated with DP off') : '';
+  $('rogue-note').textContent = src + (st.banks_expected ? ` · expected banks ${st.banks_expected.join(',')}` : '') + dpTxt;
+  $('rogue-body').className = '';
+  $('rogue-head').innerHTML = `<div class="card entity"><span class="e-lbl">Rogue participant · synthetic attack</span><span class="e-id">bank ${esc(rg)}</span><span class="e-st">${esc(summary)}</span></div>${cmp}`;
+  $('rogue-body').innerHTML = `<div class="card" style="padding:10px; margin-top:14px"><div style="max-height:150px; overflow:auto"><table><tr><th>round</th><th>accepted</th><th>excluded</th><th>reason</th><th class="num">score</th></tr>` +
+    rounds.slice().reverse().map(r => {
+      const ex = r.excluded || [];
+      if (!ex.length) return `<tr><td>${esc(r.round)}</td><td>${esc((r.accepted || []).join(', '))}</td><td><span class="tag ok">none</span></td><td></td><td></td></tr>`;
+      return ex.map((e, i) => `<tr class="ex"><td>${i ? '' : esc(r.round)}</td><td>${i ? '' : esc((r.accepted || []).join(', '))}</td><td>${rogues.has(String(e.bank_id)) ? `<span class="tag bad">✖ bank ${esc(e.bank_id)} · rogue</span>` : `<span class="tag warn">▲ bank ${esc(e.bank_id)} · honest</span>`}</td><td>${esc(e.reason || '')}</td><td class="num">${f3(e.score)}</td></tr>`).join('');
+    }).join('') + '</table></div></div>';
+}
+
+/* ---------- 5. red team ---------- */
+function renderRedteam(s) {
+  const rt = s.redteam;
+  if (!rt) { $('red-body').className = 'waiting'; $('red-body').textContent = 'waiting for redteam.json (run: python -m fedaml.redteam …)'; return; }
+  if (rt.rows && typeof rt.rows === 'object' && !Array.isArray(rt.rows)) return renderAudit(s, rt);
+  const off = rt.dp_off || {}, on = rt.dp_on || {};
+  const target = rt.target || 'laundering';                    // headline population
+  const other = target === 'laundering' ? 'all' : 'laundering';
+  const det = rt.detail || {};
+  const otherRes = side => ((((det[side] || {}).targets || {})[other] || {}).result) || null;
+  const oOff = otherRes('dp_off'), oOn = otherRes('dp_on');
+  const accOff = off.attack_acc, accOn = on.attack_acc;
+  const fileVerdict = typeof on.verdict === 'string' ? on.verdict.toUpperCase() : null;  // PROTECTED | WEAK LEAK | LEAKS
+  let vcls = 'warn', vtxt = 'red-team results incomplete';
+  if (typeof accOff === 'number' && typeof accOn === 'number') {
+    const drop = accOff - accOn;
+    const who = target === 'laundering' ? 'a laundering row' : 'a row';
+    if (fileVerdict === 'PROTECTED' || (!fileVerdict && accOn <= 0.55)) { vcls = 'good'; vtxt = `✔ PROTECTED — with DP the attacker tells whether ${who} was in a bank's training set at ${(accOn * 100).toFixed(0)}% accuracy (coin flip = 50%), down from ${(accOff * 100).toFixed(0)}%`; }
+    else if (fileVerdict === 'WEAK LEAK' || (!fileVerdict && drop >= 0.03)) { vcls = 'warn'; vtxt = `▲ WEAK LEAK — DP cut attack accuracy by ${(drop * 100).toFixed(0)} points, still ${(accOn * 100).toFixed(0)}%`; }
+    else { vcls = 'bad'; vtxt = `✖ LEAKS — attack accuracy ${(accOff * 100).toFixed(0)}% → ${(accOn * 100).toFixed(0)}% with DP on`; }
+  }
+  const row = (k, a, b, f) => `<tr><td>${k}</td><td class="num">${f(a)}</td><td class="num">${f(b)}</td></tr>`;
+  const foot = (oOff || oOn)
+    ? `${other} rows (${other === 'all' ? 'control, 1-in-1000 base rate' : 'secondary'}): DP off acc ${f3(oOff && oOff.attack_acc)} / AUC ${f3(oOff && oOff.attack_auc)} · DP on acc ${f3(oOn && oOn.attack_acc)} / AUC ${f3(oOn && oOn.attack_auc)}`
+    : `${other} rows: not recorded in redteam.json`;
+  $('red-body').className = '';
+  $('red-body').innerHTML = `<div class="card" style="padding:10px"><table><tr><th>attack: ${esc(rt.attack || '?')} · target: <b>${esc(target)} rows</b>${rt.members ? ' · members: ' + esc(rt.members) : ''}</th><th class="num">DP off</th><th class="num">DP on</th></tr>
+    ${row('attack accuracy (0.5 = chance)', accOff, accOn, f3)}
+    ${row('attack AUC', off.attack_auc, on.attack_auc, f3)}
+    ${row('rows attacked per class', off.n, on.n, fmtInt)}
+    ${row('model AUC (utility cost)', rt.model_auc_off, rt.model_auc_on, f3)}</table></div>
+    <div style="color:var(--ink-2); font-size:12px; margin-top:10px">${esc(foot)}</div>
+    <div class="verdict ${vcls}">${esc(vtxt)}</div>`;
+}
+
+/* dot-and-whisker: attack AUC with 90% CI per setting; x 0.45–1.0; dashed coin-flip line at 0.5 */
+function auditChart(entries, isCurrent) {
+  const W = 600, rowH = 32, top = 24, left = 70, right = 200, xMin = 0.45, xMax = 1.0;
+  const H = top + entries.length * rowH + 22;
+  const x = v => left + (Math.max(xMin, Math.min(xMax, v)) - xMin) / (xMax - xMin) * (W - left - right);
+  const col = v => { const u = String(v || '').toUpperCase(); return u === 'PROTECTED' ? css('--good') : css('--crit'); };
+  const ticks = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+  let g = ticks.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="${top - 6}" y2="${H - 22}" stroke="${css('--grid')}" stroke-width="1"/>
+    <text x="${x(t)}" y="${H - 8}" fill="${css('--muted')}" font-size="12" text-anchor="middle" font-family="IBM Plex Mono, monospace">${t.toFixed(1)}</text>`).join('');
+  g += `<line x1="${x(0.5)}" x2="${x(0.5)}" y1="${top - 10}" y2="${H - 22}" stroke="${css('--ink-2')}" stroke-width="1.5" stroke-dasharray="4 4"/>
+    <text x="${x(0.5) + 4}" y="${top - 12}" fill="${css('--ink-2')}" font-size="12">coin flip 0.5</text>
+    <text x="${W - right}" y="${top - 12}" fill="${css('--muted')}" font-size="12" text-anchor="end">attack AUC · 90% CI →</text>`;
+  entries.forEach(([k, r], i) => {
+    const y = top + i * rowH + rowH / 2; const c = col(r.verdict);
+    const ci = Array.isArray(r.attack_auc_ci90) ? r.attack_auc_ci90 : [r.attack_auc, r.attack_auc];
+    if (isCurrent(k, r)) g += `<rect x="2" y="${y - rowH / 2 + 2}" width="${W - 4}" height="${rowH - 4}" rx="5" fill="none" stroke="${css('--s1')}" stroke-width="1.5"/>`;
+    g += `<text x="10" y="${y + 4}" fill="${css('--ink')}" font-size="13">${esc(k)}</text>
+      <line x1="${x(ci[0])}" x2="${x(ci[1])}" y1="${y}" y2="${y}" stroke="${c}" stroke-width="2"/>
+      <line x1="${x(ci[0])}" x2="${x(ci[0])}" y1="${y - 5}" y2="${y + 5}" stroke="${c}" stroke-width="2"/>
+      <line x1="${x(ci[1])}" x2="${x(ci[1])}" y1="${y - 5}" y2="${y + 5}" stroke="${c}" stroke-width="2"/>
+      <circle cx="${x(r.attack_auc)}" cy="${y}" r="5.5" fill="${c}" stroke="${css('--surface')}" stroke-width="2"/>
+      <text x="${W - right + 12}" y="${y + 4}" fill="${css('--ink-2')}" font-size="12.5">${f3(r.attack_auc)} · ${esc(String(r.verdict || '').toUpperCase())}${isCurrent(k, r) ? ' · this run' : ''}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block; margin:2px 0 0; font-family:IBM Plex Sans, Arial, sans-serif" role="img" aria-label="attack AUC with 90% confidence interval per DP setting">${g}</svg>`;
+}
+
+/* DP auditing game (REDTEAM): rows = {setting: {sigma, attack_acc, attack_auc, attack_auc_ci90, eps_empirical_lower_95, eps_accountant_1round, verdict, n_scored}} */
+function renderAudit(s, rt) {
+  const entries = Object.entries(rt.rows).filter(([, r]) => r && typeof r === 'object');
+  const ci = r => Array.isArray(r.attack_auc_ci90) && r.attack_auc_ci90.length === 2 ? `${f3(r.attack_auc_ci90[0])}–${f3(r.attack_auc_ci90[1])}` : '—';
+  const runSigma = typeof rt.current_sigma === 'number' ? rt.current_sigma : (s.status && s.status.dp && s.status.dp.enabled ? Number(s.status.dp.sigma) : null);
+  const isCurrent = (k, r) => rt.current_setting ? k === rt.current_setting : (runSigma != null && Number(r.sigma) === runSigma);
+  const ciHas = (r, x) => Array.isArray(r.attack_auc_ci90) && r.attack_auc_ci90[0] <= x && r.attack_auc_ci90[1] >= x;
+  const vtag = v => { const u = String(v || '').toUpperCase(); return u === 'PROTECTED' ? '<span class="tag ok">✔ PROTECTED</span>' : u === 'LEAKS' ? '<span class="tag bad">✖ LEAKS</span>' : u ? `<span class="tag warn">▲ ${esc(u)}</span>` : '—'; };
+  const off = entries.find(([, r]) => !Number(r.sigma));
+  const ons = entries.filter(([, r]) => Number(r.sigma) > 0);
+  let vcls = 'warn', vtxt = 'auditing game incomplete';
+  const V = r => String(r.verdict || '').toUpperCase();
+  const cur = entries.find(([k, r]) => isCurrent(k, r));
+  const others = ons.filter(([k]) => !cur || k !== cur[0]);
+  const otherTxt = others.length ? ' Other settings: ' + others.map(([k, r]) => `${k} → ${f3(r.attack_auc)} (${V(r) === 'PROTECTED' ? 'protected' : V(r).toLowerCase()})`).join(', ') + '.' : '';
+  if (off && cur && Number(cur[1].sigma) > 0) {
+    // judge the setting this run actually uses; report the rest of the sweep neutrally
+    const [ck, cr] = cur;
+    const ciTxt = Array.isArray(cr.attack_auc_ci90) ? ` (90% CI ${f3(cr.attack_auc_ci90[0])}–${f3(cr.attack_auc_ci90[1])}${ciHas(cr, 0.5) ? ', includes chance' : ', excludes chance'})` : '';
+    const lead = V(off[1]) === 'LEAKS' ? `Without noise the attacker spots the planted laundering transaction (AUC ${f3(off[1].attack_auc)}). ` : '';
+    if (V(cr) === 'PROTECTED') { vcls = 'good'; vtxt = `✔ ${lead}At this run's ${ck} it falls to ${f3(cr.attack_auc)}${ciTxt}.${otherTxt}`; }
+    else if (V(cr) === 'LEAKS') { vcls = 'bad'; vtxt = `✖ ${lead}At this run's ${ck} the attack still works: ${f3(cr.attack_auc)}${ciTxt}.${otherTxt}`; }
+    else { vcls = 'warn'; vtxt = `▲ ${lead}At this run's ${ck}: ${f3(cr.attack_auc)}${ciTxt}, ${V(cr).toLowerCase()}.${otherTxt}`; }
+  } else if (off && ons.length) {
+    const allProt = ons.every(([, r]) => V(r) === 'PROTECTED');
+    vcls = allProt ? 'good' : 'warn';
+    vtxt = (allProt ? '✔ ' : '▲ ') + (V(off[1]) === 'LEAKS' ? `Without noise the attacker spots the planted laundering transaction (AUC ${f3(off[1].attack_auc)}). ` : '') + 'With DP: ' + ons.map(([k, r]) => `${k} → ${f3(r.attack_auc)} (${V(r).toLowerCase()})`).join(', ') + '.';
+  }
+  // footnote: the older row-level membership attacks, if REDTEAM keeps them in the file
+  const rl = rt.row_level || rt.footnote || (rt.dp_off && rt.dp_on ? { dp_off: rt.dp_off, dp_on: rt.dp_on, target: rt.target } : null);
+  const foot = rl && rl.dp_off && rl.dp_on
+    ? `Footnote: row-level membership attack${rl.attack ? ' (' + esc(rl.attack) + ')' : ''} on the final model (${esc(rl.target || 'laundering')} rows): DP off acc ${f3(rl.dp_off.attack_acc)} / AUC ${f3(rl.dp_off.attack_auc)} · DP on acc ${f3(rl.dp_on.attack_acc)} / AUC ${f3(rl.dp_on.attack_auc)}.`
+    : '';
+  $('red-body').className = '';
+  $('red-body').innerHTML = `<div class="card"><div style="font-size:12.5px; color:var(--ink-2); margin-bottom:6px">attack: <b>${esc(rt.attack || 'canary_update')}</b>${rt.bank != null ? ' · bank ' + esc(rt.bank) : ''}${rt.target_row ? ' · canary: ' + esc(rt.target_row) : ''}${rt.target && typeof rt.target === 'string' && rt.target.length > 20 ? ' · target: ' + esc(rt.target) : ''}${rt.dp_on_mode ? ' · DP mode: ' + esc(rt.dp_on_mode) : ''}</div>
+    ${auditChart(entries, isCurrent)}</div>
+    <div class="card" style="padding:10px"><table><tr><th>setting</th><th class="num">σ</th><th class="num">attack AUC</th><th class="num">90% CI</th><th class="num">ε lower bound (measured)</th><th class="num">ε accountant (1 round)</th><th style="padding-left:14px">verdict</th></tr>` +
+    entries.map(([k, r]) => `<tr${isCurrent(k, r) ? ' style="outline:2px solid var(--s1); outline-offset:-2px"' : ''}><td>${esc(k)}</td><td class="num">${esc(r.sigma ?? '—')}</td><td class="num">${f3(r.attack_auc)}</td><td class="num">${ci(r)}</td><td class="num">${r.eps_empirical_lower_95 == null ? '—' : f2(r.eps_empirical_lower_95)}</td><td class="num">${r.eps_accountant_1round == null ? '—' : f2(r.eps_accountant_1round)}</td><td style="padding-left:14px">${vtag(r.verdict)}</td></tr>`).join('') +
+    `</table></div>
+    <div style="color:var(--ink-2); font-size:12px; margin-top:10px">Synthetic attack by our own team: the attacker sees one bank's update with and without a planted laundering row and guesses which. 0.5 = chance.${(rt.current_setting || runSigma != null) ? ' Outlined row = setting of the current run' + (rt.current_setting ? ' (' + esc(rt.current_setting) + ')' : '') + '.' : ''}${typeof rt.model_auc_off === 'number' && typeof rt.model_auc_on === 'number' ? ` Utility cost: model AUC ${f3(rt.model_auc_off)} without DP → ${f3(rt.model_auc_on)} with DP.` : ''} ${esc(foot)}</div>
+    <div class="verdict ${vcls}">${esc(vtxt)}</div>`;
+}
+
+/* ---------- 6. footprint ---------- */
+function renderFootprint(s) {
+  const fp = s.footprint;
+  if (!fp) { $('foot-body').className = 'waiting'; $('foot-body').textContent = 'waiting for footprint.json (INFRA: scripts/footprint.sh)'; return; }
+  const rss = fp.per_container_peak_rss_mb || {}; const max = Math.max(1, ...Object.values(rss).map(Number));
+  const total = Object.values(rss).reduce((a, b) => a + Number(b || 0), 0);
+  $('foot-body').className = '';
+  $('foot-body').innerHTML = `<div class="foot"><div class="strip">
+      <div class="cell"><div class="k">Seconds per round</div><div class="v">${fp.seconds_per_round == null ? '—' : f2(fp.seconds_per_round)} s</div></div>
+      <div class="cell"><div class="k">Total runtime</div><div class="v">${fp.total_runtime_s == null ? '—' : fmtInt(Math.round(fp.total_runtime_s)) + ' s'}</div></div>
+      <div class="cell"><div class="k">Sum of container peaks</div><div class="v">${fmtInt(Math.round(total))} MB</div><div class="m">of 8 192 MB</div></div>
+      <div class="cell" style="flex:2"><div class="k">Machine</div><div class="v" style="font-size:20px; white-space:normal">${esc(fp.arch || '?')} · ${esc(fp.cpu_count ?? '?')} cores</div><div class="m">IBM LinuxONE Community Cloud</div></div></div>
+    <div class="card" style="padding:10px"><table><tr><th>container</th><th>peak RSS</th></tr>` +
+    Object.entries(rss).sort((a, b) => Number(b[1]) - Number(a[1])).map(([c, v]) => `<tr><td class="mono">${esc(c)}</td><td><span class="hbar" style="width:${(360 * Number(v) / max).toFixed(0)}px"></span><span class="mono">${fmtInt(Math.round(v))} MB</span></td></tr>`).join('') +
+    `</table></div></div>`;
+}
+
+/* ---------- 7. alert queue + SAR ---------- */
+let selAlert = null, sarCache = {}, sarShown = null;
+function mdInline(t) {   // t is ALREADY HTML-escaped; only these patterns become tags
+  return t.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*]+)\*(?=[\s).,;:]|$)/g, '$1<em>$2</em>');
+}
+function renderMarkdown(src) {   // tiny renderer: escape first, then headings, bold, code, bullets, pipe tables, paragraphs
+  const lines = esc(String(src)).split(/\r?\n/);
+  const out = []; let para = [], list = [], table = [];
+  const flushPara = () => { if (!para.length) return; const txt = para.join(' ');
+    const llm = txt.startsWith('**Analyst assessment (LLM)');   // the one paragraph fedaml.sar lets the model write
+    out.push(llm ? `<p class="llm"><span class="llm-label">written by the LLM</span>${mdInline(txt)}</p>` : `<p>${mdInline(txt)}</p>`); para = []; };
+  const flushList = () => { if (list.length) { out.push('<ul>' + list.map(li => `<li>${mdInline(li)}</li>`).join('') + '</ul>'); list = []; } };
+  const flushTable = () => { if (!table.length) return; const rows = table.filter(r => !/^\|?\s*:?-{3,}/.test(r));
+    const cells = r => r.replace(/^\|/, '').replace(/\|\s*$/, '').split('|').map(c => mdInline(c.trim()));
+    out.push('<table>' + rows.map((r, i) => '<tr>' + cells(r).map(c => i === 0 ? `<th>${c}</th>` : `<td>${c}</td>`).join('') + '</tr>').join('') + '</table>'); table = []; };
+  const flushAll = () => { flushPara(); flushList(); flushTable(); };
+  for (const raw of lines) {
+    const l = raw.trimEnd();
+    let m;
+    if (!l.trim()) { flushAll(); continue; }
+    if (/^\s*\|/.test(l)) { flushPara(); flushList(); table.push(l.trim()); continue; }
+    if ((m = l.match(/^(#{1,3})\s+(.*)$/))) { flushAll(); const n = Math.min(m[1].length, 2); out.push(`<h${n}>${mdInline(m[2])}</h${n}>`); continue; }
+    if ((m = l.match(/^\s*[-*]\s+(.*)$/)) && !/^\*\*/.test(l.trim()) && !/^---+$/.test(l.trim())) { flushPara(); flushTable(); list.push(m[1]); continue; }
+    if (/^---+$/.test(l.trim())) { flushAll(); out.push('<hr style="border:0;border-top:1px solid var(--grid)">'); continue; }
+    flushList(); flushTable(); para.push(l.trim());
+  }
+  flushAll();
+  return out.join('');
+}
+async function showSar(id) {
+  const box = $('sar-box'); if (!box) return;
+  if (!id) { box.innerHTML = '<div class="waiting">no report generated for this alert</div>'; sarShown = null; return; }
+  if (sarShown === id && box.dataset.ok === '1') return;
+  try {
+    let d = sarCache[id];
+    if (!d) { const r = await fetch('/api/sar/' + encodeURIComponent(id), { cache: 'no-store' }); if (r.status === 404) { box.innerHTML = '<div class="waiting">no report generated for this alert</div>'; sarShown = id; box.dataset.ok = '1'; return; } if (!r.ok) throw new Error('HTTP ' + r.status); d = await r.json(); sarCache[id] = d; }
+    box.innerHTML = renderMarkdown(d.markdown); box.dataset.ok = '1'; sarShown = id; box.scrollTop = 0;
+    $('sar-file').textContent = `state/${d.file}` + (d.mtime ? ` · written ${d.mtime.replace('T', ' ').replace('+00:00', 'Z')}` : '');
+  } catch (e) { box.innerHTML = `<div class="waiting">report unavailable (${esc(e.message)})</div>`; box.dataset.ok = '0'; }
+}
+function pickAlert(id) { selAlert = id; renderAlerts(lastState); }
+let lastState = null;
+function renderAlerts(s) {
+  const al = s && s.alerts;
+  if (!al || !Array.isArray(al.alerts) || !al.alerts.length) { $('alerts-body').className = 'waiting'; $('alerts-body').textContent = 'waiting for alerts.json'; return; }
+  const meta = al.meta || {}; const rows = al.alerts.slice().sort((a, b) => (a.rank ?? 1e9) - (b.rank ?? 1e9));
+  if (!selAlert || !rows.some(r => r.alert_id === selAlert)) selAlert = (rows.find(r => r.alert_id === meta.demo_alert_id) || rows.find(r => r.has_sar) || rows[0]).alert_id;
+  const k = rows.length, lab = rows.filter(r => r.is_laundering === 1).length;
+  const prec = k ? lab / k : 0; const lift = (meta.prevalence > 0 && lab) ? prec / meta.prevalence : null;
+  const amt = r => r.amt_paid == null ? '—' : Number(r.amt_paid).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const tag = r => r.is_laundering === 1 ? '<span class="tag warn" title="labelled laundering in the synthetic data">▲ labelled laundering</span>' : '<span class="tag muted">not labelled</span>';
+  const fresh = !$('aq-table');
+  if (fresh) {
+    $('alerts-body').className = '';
+    $('alerts-body').innerHTML = `<div id="aq-meta" style="font-size:12px; color:var(--ink-2); margin-bottom:6px"></div>
+      <div class="aq"><div class="card queue"><table id="aq-table"></table></div>
+      <div><div class="card" id="aq-entity"></div><div class="provenance"><span><span class="sw" style="background:var(--llm)"></span>paragraph written by the LLM</span><span><span class="sw" style="background:var(--surface-2); border:1px solid var(--border)"></span>everything else inserted by code from alerts.json</span><span id="sar-file" style="color:var(--muted)"></span></div>
+      <div class="sar" id="sar-box"><div class="waiting">loading report…</div></div></div></div>`;
+  }
+  $('aq-meta').innerHTML = `<b>${lab} of top ${k} labelled laundering</b>${lift ? `, ≈${Math.round(lift)}× the base rate (${(meta.prevalence * 100).toFixed(3)}% of ${fmtInt(meta.n_scored)} scored)` : ''}; ${esc(meta.wording || 'ranked for analyst review, not a finding')}.`
+    + (meta.ablation_note ? `<div style="color:var(--muted); font-size:11px; margin-top:3px">Disclosure: ${esc(meta.ablation_note)}</div>` : '');
+  $('aq-table').innerHTML = `<tr><th>rank</th><th>alert</th><th class="num">score</th><th class="num">banks</th><th class="num">trigger amount</th><th>cur</th><th>synthetic-data label</th><th>report</th></tr>` +
+    rows.map(r => `<tr class="pick${r.alert_id === selAlert ? ' sel' : ''}" data-id="${esc(r.alert_id)}"><td>${esc(r.rank ?? '—')}</td><td class="aid">${esc(r.alert_id)}</td><td class="num">${r.score == null ? '—' : Number(r.score).toFixed(6)}</td><td class="num" title="${esc((r.banks_involved || []).join(', '))}">${esc(r.n_banks)}</td><td class="num">${amt(r)}</td><td class="cur">${esc(r.cur_paid || '')}</td><td>${tag(r)}</td><td>${r.has_sar ? '<span class="tag ok">report</span>' : '<span class="tag muted" title="no report generated">no report</span>'}</td></tr>`).join('');
+  $('aq-table').querySelectorAll('tr.pick').forEach(tr => tr.onclick = () => pickAlert(tr.dataset.id));
+  const cur = rows.find(r => r.alert_id === selAlert);
+  if (cur) $('aq-entity').innerHTML = `<div class="entity"><span class="e-lbl">AML alert · ranked for analyst review</span><span class="e-id">${esc(cur.alert_id)}</span>
+    <span class="e-st">rank ${esc(cur.rank ?? '—')} · score ${cur.score == null ? '—' : Number(cur.score).toFixed(6)} · ${esc(cur.n_banks)} bank${cur.n_banks === 1 ? '' : 's'}${(cur.banks_involved || []).length ? ' (' + esc(cur.banks_involved.join(', ')) + ')' : ''}</span>
+    <span class="e-name">${amt(cur)} <span style="font-size:18px; color:var(--ink-2); letter-spacing:0">${esc(cur.cur_paid || '')} · trigger amount</span></span>
+    <div class="e-row">${tag(cur)}${cur.has_sar ? '<span class="tag ok">report</span>' : '<span class="tag muted">no report</span>'}</div></div>`;
+  showSar(cur && cur.has_sar ? cur.alert_id : null);
+}
+
+/* ---------- evidence footer ---------- */
+function renderEvidence(s) {
+  const f = s.files || {};
+  const age = name => { const i = f[name]; if (!i) return '—'; if (!i.present) return 'missing'; return i.mtime ? `${i.mtime.replace('T', ' ').replace('+00:00', 'Z')} (${Math.round(i.age_s)}s ago, ${kb(i.bytes)})` : 'present'; };
+  const st = s.status || {}; const rounds = Array.isArray(st.rounds) ? st.rounds : [];
+  const evb = Array.isArray(st.eval_banks) && st.eval_banks.length ? st.eval_banks.join(',') : null;
+  const pooled = ['pooled_auc', 'pooled_bank_auc', 'bank_pooled_auc'].find(k => rounds.some(r => typeof r[k] === 'number')) || (evb ? 'global_auc' : null);
+  const rogueSrc = (rounds.some(r => (r.excluded || []).length) || !s.status_rogue_on) ? 'status.json' : 'status_rogue_on.json';
+  const rt = s.redteam || {};
+  const rows = [
+    ['1 · Regulator view', `${s.logs_dir || 'logs/egress'}/bank_<id>.jsonl`, 'kind=model_update → messages, bytes, params_shared, rows_shared; kind=blocked → blocked attempts; tail = last 10 lines by ts', (f['logs/egress'] && f['logs/egress'].present) ? `${f['logs/egress'].n_files} file(s)` : 'missing'],
+    ['2 · Training', `${s.state_dir || 'state'}/status.json`, pooled ? `rounds[].${pooled}, rounds[].${pooled.replace('auc', 'ap')}` + (evb ? ` (pooled over eval_banks=[${evb}] test sets)` : '') + `, rounds[].per_bank_auc` + (pooled !== 'global_auc' && rounds.some(r => typeof r.global_auc === 'number') ? '; rounds[].global_auc as control' : '') : 'rounds[].global_auc, rounds[].global_ap, rounds[].per_bank_auc (global_test control; pooled key not written yet)', age('status.json')],
+    ['2 · Training (reference lines)', `${s.state_dir || 'state'}/baselines.json`, 'per_bank.<id>.{logreg,rf,hgb}.pooled_auc (best per bank; .auc = own test, fallback only), centralized_logreg.auc and federated.auc (both pooled basis)', age('baselines.json')],
+    ['3 · Privacy', `${s.state_dir || 'state'}/status.json`, `dp.epsilon_spent (approximate), dp.sigma, dp.clip_norm, dp.delta, dp.mode, dp.noise_added_by, dp.epsilon_note, round/total_rounds; planned total = dp.epsilon_planned_total or ε spent × total_rounds / round` + (typeof s.eps_budget === 'number' ? ` · policy budget ${s.eps_budget} is a dashboard override (--eps-budget), not a measurement` : ' · no policy budget set'), age('status.json')],
+    ['4 · Rogue bank', `${s.state_dir || 'state'}/${rogueSrc}`, 'rounds[].accepted, rounds[].excluded[].{bank_id,reason,score}' + (s.status_rogue_off ? '; last round global_auc + global_ap and rogue exclusion count of status_rogue_off.json vs status_rogue_on.json' : ''), age(rogueSrc)],
+    ['5 · Red team', `${s.state_dir || 'state'}/redteam.json`, rt.rows ? 'attack, bank, target_row, rows.<setting>.{sigma, attack_auc, attack_auc_ci90, eps_empirical_lower_95, eps_accountant_1round, verdict}; footnote from row_level (or dp_off/dp_on)' : `attack, target (headline = ${rt.target || 'laundering'} rows), dp_off/dp_on.{attack_acc,attack_auc,n,verdict}, model_auc_off/on; footnote from detail.dp_off|dp_on.targets.<other>.result`, age('redteam.json')],
+    ['6 · Footprint', `${s.state_dir || 'state'}/footprint.json`, 'per_container_peak_rss_mb, seconds_per_round, total_runtime_s, cpu_count, arch', age('footprint.json')],
+    ['7 · Alert queue', `${s.state_dir || 'state'}/alerts.json`, 'alerts[].{alert_id, rank, score, banks_involved, trigger.amt_paid, trigger.cur_paid, trigger.is_laundering}; meta.{prevalence, n_scored, demo_alert_id, wording, ablation_note}; labelled count and lift computed on the page', age('alerts.json')],
+    ['7 · Report', `${s.state_dir || 'state'}/sar/<alert_id>.md`, 'rendered as written by fedaml.sar (GET /api/sar/<id>, ids ^A[0-9]{2,3}$ only); only the paragraph marked "Analyst assessment (LLM)" is model-written', (f['sar/'] && f['sar/'].present) ? `${f['sar/'].n_files} report(s)` : 'missing'],
+  ];
+  $('ev-note').textContent = `served from ${location.host} · state=${s.state_dir || 'state'} logs=${s.logs_dir || 'logs/egress'} · page time ${hhmmss(s.now)} UTC`;
+  $('ev-body').className = '';
+  $('ev-body').innerHTML = `<table class="plain"><tr><th>panel</th><th>file (on the VM)</th><th>keys used</th><th>file written</th></tr>` +
+    rows.map(r => `<tr><td>${esc(r[0])}</td><td class="mono" style="font-size:12px">${esc(r[1])}</td><td>${esc(r[2])}</td><td>${esc(r[3])}</td></tr>`).join('') + '</table>';
+}
+
+/* run tag in the top bar: DP on/off · σ · mode, from status.json */
+function renderRunPill(s) {
+  const p = $('pill-run'); if (!p) return;
+  const dp = s.status && s.status.dp;
+  if (!dp) { p.className = 'btn-pill filled'; p.textContent = 'run: waiting for status.json'; return; }
+  p.className = 'btn-pill filled' + (dp.enabled ? '' : ' dpoff');
+  p.textContent = dp.enabled ? `DP on · σ ${dp.sigma ?? '?'} · ${isLocalDP(dp) ? 'local' : 'central'}` : 'DP off · unprotected run';
+}
+
+/* ---------- loop ---------- */
+let failures = 0;
+async function tick() {
+  try {
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const s = await r.json();
+    failures = 0;
+    const f = s.files || {};
+    setPill('pill-status', f['status.json'], 'status.json');
+    setPill('pill-baselines', f['baselines.json'], 'baselines.json');
+    setPill('pill-redteam', f['redteam.json'], 'redteam.json');
+    setPill('pill-footprint', f['footprint.json'], 'footprint.json');
+    $('pill-live').className = 'btn-pill outline live'; $('pill-live').innerHTML = '<span class="dot"></span>live · ' + hhmmss(s.now) + ' UTC';
+    renderRunPill(s);
+    $('banner').style.display = (s.status && s.status.synthetic_sample) ? 'block' : 'none';
+    lastState = s;
+    renderRegulator(s); renderTraining(s); renderPrivacy(s); renderRogue(s); renderRedteam(s); renderFootprint(s); renderAlerts(s); renderEvidence(s);
+  } catch (e) {
+    failures++;
+    $('pill-live').className = 'btn-pill outline offline'; $('pill-live').innerHTML = '<span class="dot"></span>offline · ' + esc(e.message);
+  }
+}
+const soloId = new URLSearchParams(location.search).get('solo');   // ?solo=p-train renders one panel full width (screenshots)
+if (soloId && document.getElementById(soloId)) { document.body.classList.add('solo'); document.getElementById(soloId).classList.add('solo-on'); }
+let deepLinked = false;   // /#p-train etc. frames one panel at the top (used for the 1280x720 screenshots)
+async function firstTick() { await tick(); if (!deepLinked && location.hash) { const el = document.querySelector(location.hash); if (el) { el.scrollIntoView({ block: 'start' }); window.scrollBy(0, -8); } deepLinked = true; } }
+firstTick(); setInterval(tick, 3000);
+</script>
+<script>
+(function () {
+  // Recorded runs (state/status_<tag>.json on the LinuxONE VM): [round, pooled AUC, pooled AP, excluded banks]
+  var RUNS = {
+    dpon: { label: "Privacy noise on (σ 0.5, the setting we use)", banks: [1,2,3,4], rows: [[1,0.844,0.007],[2,0.855,0.009],[3,0.948,0.049],[4,0.972,0.186],[5,0.960,0.092],[6,0.963,0.048],[7,0.988,0.319],[8,0.956,0.038],[9,0.989,0.113],[10,0.982,0.065]] },
+    dpoff: { label: "No noise (comparison)", banks: [1,2,3,4], rows: [[1,0.982,0.084],[2,0.987,0.119],[3,0.989,0.154],[4,0.990,0.182],[5,0.991,0.204],[6,0.991,0.187],[7,0.991,0.231],[8,0.992,0.225],[9,0.992,0.264],[10,0.992,0.248]] },
+    rogue_on: { label: "Cheating bank 5 present, defense on", banks: [1,2,3,4,5], rogue: true, defense: true, rows: [[1,0.982,0.084],[2,0.987,0.119],[3,0.989,0.154],[4,0.990,0.182],[5,0.991,0.204],[6,0.991,0.218],[7,0.992,0.230],[8,0.992,0.239],[9,0.992,0.247],[10,0.992,0.250]] },
+    rogue_off: { label: "Cheating bank 5 present, defense off", banks: [1,2,3,4,5], rogue: true, defense: false, rows: [[1,0.888,0.014],[2,0.901,0.018],[3,0.911,0.023],[4,0.921,0.029],[5,0.929,0.035],[6,0.936,0.042],[7,0.942,0.050],[8,0.947,0.058],[9,0.950,0.065],[10,0.953,0.071]] }
+  };
+  var RT = { "DP off": [0.994, 0.985, 0.999, "LEAKS"], "σ 0.3": [0.551, 0.534, 0.569, "WEAK LEAK"], "σ 0.5": [0.517, 0.497, 0.540, "PROTECTED"], "σ 0.8": [0.497, 0.476, 0.524, "PROTECTED"] };
+  var ALERTS = [["A01",0.999965,4,0],["A02",0.999964,5,0],["A03",0.999964,3,0],["A04",0.999963,2,0],["A05",0.999962,3,0],["A06",0.999960,4,1],["A07",0.999959,3,0],["A08",0.999958,2,0],["A09",0.999956,2,0],["A10",0.999954,2,0],["A11",0.999953,2,0],["A12",0.999953,3,0]];
+  var LLM = "The payment format of ACH and the large amount involved, combined with the sender's history of making multiple payments to distinct accounts, raise significant concerns. Given the complexity of the transaction and the lack of apparent movement of funds, it is prudent to review this payment for further investigation.";
+  var BANK_ROWS = { 1: "449,859", 2: "71,177", 3: "64,791", 4: "62,211", 5: "41,008" };
+  var BANK_COLOR = { 1: "--b1", 2: "--b2", 3: "--b3", 4: "--b4", 5: "--danger" };
+
+  var state = { mode: "dpon", round: 0, msgs: 0, blocked: 0, timer: null };
+  var $ = function (id) { return document.getElementById(id); };
+  var css = function (v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); };
+  var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function log(html, cls) {
+    var el = $("log");
+    if (el.firstElementChild && el.firstElementChild.classList.contains("muted")) el.innerHTML = "";
+    var d = document.createElement("div"); if (cls) d.className = cls; d.innerHTML = html; el.appendChild(d); el.scrollTop = el.scrollHeight;
+  }
+
+  function renderBanks(pulse) {
+    var run = RUNS[state.mode], html = "";
+    for (var b = 1; b <= 5; b++) {
+      var inRun = run.banks.indexOf(b) >= 0, rogue = b === 5;
+      var status = !inRun ? "not in this run" : (rogue ? (run.defense ? "✖ excluded" : "⚠ averaged in") : "✔ accepted");
+      var border = rogue && inRun ? "var(--danger)" : "var(" + BANK_COLOR[b] + ")";
+      html += '<div class="bank' + (inRun ? "" : " off") + (pulse && inRun ? " pulse" : "") + '" style="border-color:' + border + '">' +
+        '<b>Bank ' + b + (rogue ? " · rogue" : "") + '</b><span class="muted">' + BANK_ROWS[b] + ' rows</span>' +
+        '<span class="st" style="color:' + (rogue && inRun ? "var(--danger-ink)" : "var(--t-muted)") + '">' + (state.round ? status : (inRun ? "waiting" : status)) + '</span></div>';
+    }
+    $("banks").innerHTML = html;
+  }
+
+  function renderKpis() {
+    $("rnd").textContent = state.round;
+    $("k-msg").textContent = state.msgs;
+    $("k-par").textContent = (state.msgs * 21).toLocaleString("en-US");
+    $("k-blk").textContent = state.blocked;
+    $("k-blk-box").className = "kpi" + (state.blocked ? " bad" : "");
+  }
+
+  function renderChart() {
+    var run = RUNS[state.mode], W = 520, H = 250, L = 44, R = 70, T = 16, B = 34;
+    var rogue = !!run.rogue, metric = rogue ? 2 : 1;
+    var ymin = rogue ? 0 : 0.80, ymax = rogue ? 0.30 : 1.0;
+    var x = function (r) { return L + (r - 1) / 9 * (W - L - R); };
+    var y = function (v) { return T + (1 - (v - ymin) / (ymax - ymin)) * (H - T - B); };
+    var ticks = rogue ? [0, 0.1, 0.2, 0.3] : [0.80, 0.85, 0.90, 0.95, 1.00];
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(run.label) + ' — ' + (rogue ? "precision" : "AUC") + ' per round">';
+    ticks.forEach(function (t) { s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(t) + '" y2="' + y(t) + '" stroke="' + css("--line") + '"/><text x="' + (L - 6) + '" y="' + (y(t) + 4) + '" text-anchor="end" font-size="11" font-family="IBM Plex Mono, monospace" fill="' + css("--t-muted") + '">' + t.toFixed(2) + '</text>'; });
+    for (var r = 1; r <= 10; r++) s += '<text x="' + x(r) + '" y="' + (H - 12) + '" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="' + css("--t-muted") + '">' + r + '</text>';
+    s += '<text x="' + ((L + W - R) / 2) + '" y="' + (H) + '" text-anchor="middle" font-size="11" fill="' + css("--t-muted") + '">round</text>';
+    if (rogue) {
+      // show the other defense run faintly for comparison
+      var other = RUNS[run.defense ? "rogue_off" : "rogue_on"];
+      var po = other.rows.map(function (row) { return x(row[0]) + "," + y(row[2]); }).join(" ");
+      s += '<polyline points="' + po + '" fill="none" stroke="' + css("--line2") + '" stroke-width="2" stroke-dasharray="5 4"/>';
+      s += '<text x="' + (x(10) + 8) + '" y="' + (y(other.rows[9][2]) + 4) + '" font-size="11" fill="' + css("--t-muted") + '">' + (run.defense ? "off " : "on ") + other.rows[9][2].toFixed(3) + '</text>';
+    }
+    var shown = run.rows.slice(0, state.round), col = rogue ? (run.defense ? css("--ok") : css("--danger")) : css("--accent");
+    if (shown.length) {
+      var pts = shown.map(function (row) { return x(row[0]) + "," + y(row[metric]); }).join(" ");
+      s += '<polyline points="' + pts + '" fill="none" stroke="' + col + '" stroke-width="2.5"/>';
+      shown.forEach(function (row) { s += '<circle cx="' + x(row[0]) + '" cy="' + y(row[metric]) + '" r="3.5" fill="' + col + '"/>'; });
+      var last = shown[shown.length - 1];
+      s += '<text x="' + (x(last[0]) + 8) + '" y="' + (y(last[metric]) - 6) + '" font-size="12" font-weight="600" font-family="IBM Plex Mono, monospace" fill="' + css("--fg") + '">' + last[metric].toFixed(3) + '</text>';
+    }
+    s += '</svg>';
+    $("chart").innerHTML = s;
+    $("chart-title").textContent = rogue ? "Alert precision (AP) per round, with a cheater present" : "Shared model AUC per round (pooled test, banks 2–4)";
+    var note = $("mode-note");
+    if (state.mode === "dpon") { note.className = "verdict ok"; note.innerHTML = "<strong>The setting we use.</strong> Noise is added inside each bank. Final AUC 0.982, precision 0.065: about one point of AUC is the price of privacy."; }
+    else if (state.mode === "dpoff") { note.className = "verdict"; note.innerHTML = "<strong>No noise, for comparison.</strong> Final AUC 0.992, matching the best single bank (0.986), with precision 0.248, about 2.8× pooling all raw data (0.088)."; }
+    else if (state.mode === "rogue_on") { note.className = "verdict ok"; note.innerHTML = "<strong>Defense on.</strong> Bank 5 is excluded in every round; no honest bank is touched. Precision ends at 0.250 (dashed line: the same run with the defense off)."; }
+    else { note.className = "verdict bad"; note.innerHTML = "<strong>Defense off.</strong> Bank 5's poisoned update is averaged in. AUC only slips to 0.953, but precision stays at 0.071: most alerts become false alarms."; }
+  }
+
+  function step() {
+    var run = RUNS[state.mode];
+    if (state.round >= 10) { stop(); return; }
+    state.round += 1;
+    var row = run.rows[state.round - 1];
+    run.banks.forEach(function (b) {
+      state.msgs += 1;
+      if (b === 5 && run.rogue) log("r" + state.round + " bank 5 sent 21 numbers (poisoned)", "ex");
+      else log("r" + state.round + " bank " + b + " sent 21 numbers · rows=0");
+    });
+    if (run.rogue && run.defense) log("r" + state.round + " coordinator: ✖ bank 5 excluded (points against the median)", "ex");
+    if (run.rogue && !run.defense) log("r" + state.round + " coordinator: ⚠ bank 5 averaged in (defense off)", "ex");
+    log("r" + state.round + " new global model · AUC " + row[1].toFixed(3) + " · AP " + row[2].toFixed(3), "ok");
+    renderBanks(true); renderKpis(); renderChart();
+    if (!reduce) setTimeout(function () { renderBanks(false); }, 350);
+    if (state.round >= 10) stop();
+  }
+
+  function stop() { if (state.timer) { clearInterval(state.timer); state.timer = null; } $("play").textContent = state.round >= 10 ? "↺ Replay" : "▶ Play 10 rounds"; }
+
+  function reset(mode) {
+    stop(); state.mode = mode || state.mode; state.round = 0; state.msgs = 0;
+    $("log").innerHTML = '<span class="muted">' + esc(RUNS[state.mode].label) + '. Press Play or Next round.</span>';
+    renderBanks(false); renderKpis(); renderChart();
+  }
+
+  document.querySelectorAll("[data-mode]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll("[data-mode]").forEach(function (b) { b.setAttribute("aria-pressed", String(b === btn)); });
+      reset(btn.getAttribute("data-mode"));
+    });
+  });
+  $("play").addEventListener("click", function () {
+    if (state.timer) { stop(); return; }
+    if (state.round >= 10) reset();
+    $("play").textContent = "❚❚ Pause";
+    step();
+    state.timer = setInterval(step, reduce ? 400 : 900);
+  });
+  $("step").addEventListener("click", function () { stop(); if (state.round >= 10) reset(); step(); });
+  $("leak").addEventListener("click", function () {
+    state.blocked += 1; renderKpis();
+    log("BLOCKED bank 1: forbidden key 'rows' (5 raw transactions) · refused and logged · rows_shared stays 0", "bl");
+  });
+
+  // red team
+  function renderRT(key) {
+    var W = 520, H = 120, L = 20, R = 20, x = function (v) { return L + (v - 0.45) / 0.55 * (W - L - R); };
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Attack score for ' + esc(key) + ': ' + RT[key][0] + '">';
+    [0.5, 0.6, 0.7, 0.8, 0.9, 1.0].forEach(function (t) { s += '<line x1="' + x(t) + '" x2="' + x(t) + '" y1="20" y2="86" stroke="' + css("--line") + '"/><text x="' + x(t) + '" y="104" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="' + css("--t-muted") + '">' + t.toFixed(1) + '</text>'; });
+    s += '<line x1="' + x(0.5) + '" x2="' + x(0.5) + '" y1="14" y2="86" stroke="' + css("--accent") + '" stroke-dasharray="4 3" stroke-width="1.5"/><text x="' + (x(0.5) + 5) + '" y="14" font-size="11" fill="' + css("--accent-ink") + '">coin flip</text>';
+    Object.keys(RT).forEach(function (k) {
+      var r = RT[k], sel = k === key, yy = 54, col = r[3] === "PROTECTED" ? css("--ok") : (r[3] === "WEAK LEAK" ? css("--warn") : css("--danger"));
+      s += '<line x1="' + x(r[1]) + '" x2="' + x(r[2]) + '" y1="' + yy + '" y2="' + yy + '" stroke="' + (sel ? css("--fg") : css("--line2")) + '" stroke-width="' + (sel ? 2 : 1) + '"/>';
+      s += '<circle cx="' + x(r[0]) + '" cy="' + yy + '" r="' + (sel ? 8 : 5) + '" fill="' + (sel ? col : css("--line2")) + '" stroke="' + css("--surface") + '" stroke-width="1.5"/>';
+    });
+    s += '</svg>';
+    $("rtchart").innerHTML = s;
+    var r = RT[key], n = $("rtnote");
+    n.className = "verdict " + (r[3] === "PROTECTED" ? "ok" : r[3] === "WEAK LEAK" ? "warn" : "bad");
+    var words = key === "DP off" ? "The attacker almost always tells. <strong>Leaks.</strong>" : key === "σ 0.3" ? "Still a little better than guessing. <strong>Weak leak</strong> — so we raised the noise." : key === "σ 0.5" ? "<strong>Near chance.</strong> The setting our system uses." : "<strong>A coin flip.</strong> Even more noise costs more accuracy.";
+    n.innerHTML = "Attack score <span class=\"num\">" + r[0].toFixed(3) + "</span> (90% range " + r[1].toFixed(3) + "–" + r[2].toFixed(3) + "). " + words;
+  }
+  document.querySelectorAll("[data-rt]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll("[data-rt]").forEach(function (b) { b.setAttribute("aria-pressed", String(b === btn)); });
+      renderRT(btn.getAttribute("data-rt"));
+    });
+  });
+
+  // alert queue
+  function renderQueue(sel) {
+    var tb = $("queue").querySelector("tbody");
+    tb.innerHTML = ALERTS.map(function (a, i) {
+      var lab = a[3] ? '<span class="chip y">▲ labelled laundering</span>' : '<span class="chip">not labelled</span>';
+      return '<tr data-id="' + a[0] + '"' + (a[0] === sel ? ' class="sel"' : '') + ' tabindex="0"><td class="num">' + (i + 1) + '</td><td class="num">' + a[0] + '</td><td class="r">' + a[1].toFixed(6) + '</td><td class="r">' + a[2] + '</td><td>' + lab + '</td></tr>';
+    }).join("");
+    tb.querySelectorAll("tr").forEach(function (tr) {
+      var go = function () { renderQueue(tr.getAttribute("data-id")); renderSar(tr.getAttribute("data-id")); };
+      tr.addEventListener("click", go);
+      tr.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+    });
+  }
+  function renderSar(id) {
+    var el = $("sar");
+    if (id === "A06") {
+      el.innerHTML = '<div><span class="chip a">A06 · rank 6 · 4 banks</span> <span class="chip y">▲ labelled laundering (synthetic)</span></div>' +
+        '<p><strong>€10,795,798.60 by ACH</strong>, account 80426FC30 (bank 023833) → account 8025EF980 (bank 013083), 10 Sep 2022 17:28. The sender made 2 other payments to 2 other receivers; the receiver has not moved the funds onward. <span class="muted">(written by code)</span></p>' +
+        '<div class="llmbox"><span class="lbl">written by the LLM · Qwen2.5-1.5B on LinuxONE · 35.8 s</span>' + esc(LLM) + '</div>' +
+        '<p class="muted">Ranked for analyst review; not a finding of laundering. Every account id was checked against the alert record.</p>';
+    } else if (id === "A07" || id === "A08") {
+      el.innerHTML = '<div><span class="chip">' + id + '</span> <span class="chip">not labelled</span></div><p>Report written by the <strong>template</strong>: the claim check rejected the LLM\'s draft (' + (id === "A07" ? "it miscounted the sender's payments" : "it called a single transfer a sophisticated laundering scheme") + ').</p>';
+    } else {
+      el.innerHTML = '<div><span class="chip">' + id + '</span> <span class="chip">not labelled</span></div><p class="muted">No report was recorded for this alert in our run. Reports exist for A06 (LLM) and A07–A08 (template after the claim check).</p>';
+    }
+  }
+
+  reset("dpon"); renderRT("σ 0.5"); renderQueue("A06"); renderSar("A06");
+  if (window.matchMedia) { var mq = window.matchMedia("(prefers-color-scheme: dark)"); if (mq.addEventListener) mq.addEventListener("change", function () { renderChart(); renderRT(document.querySelector('[data-rt][aria-pressed="true"]').getAttribute("data-rt")); }); }
+})();
+</script>
+</body>
+</html>
