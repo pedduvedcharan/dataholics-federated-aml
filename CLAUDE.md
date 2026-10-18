@@ -44,8 +44,9 @@ Read this file first, then `docs/CONTRACTS.md`, then your own brief in `agents/`
 | `agents/02-MODELS.md` | Features, per-bank baselines, multi-model comparison | `fedaml/features.py`, `fedaml/baselines.py` |
 | `agents/03-FEDERATION.md` | Bank client, coordinator, FedAvg, DP, rogue defense, rogue bank | `fedaml/bank.py`, `fedaml/coordinator.py`, `fedaml/dp.py`, `fedaml/defense.py`, `fedaml/rogue.py` |
 | `agents/04-REDTEAM.md` | Membership inference attacker, `redteam` command | `fedaml/redteam.py` |
-| `agents/05-AUDIT-DASHBOARD.md` | Egress audit function, regulator dashboard, privacy meter | `fedaml/egress.py`, `fedaml/dashboard/` |
+| `agents/05-AUDIT-DASHBOARD.md` | Egress audit function, regulator dashboard data + routes, privacy meter | `fedaml/egress.py`, `fedaml/dashboard/*.py`, `tests/test_dashboard.py` |
 | `agents/06-GENAI.md` | LLM runtime test on s390x, SAR generator, template fallback | `fedaml/sar.py`, `fedaml/llm/` |
+| `agents/07-UI.md` | Dashboard presentation layer, styled to `docs/UI_REFERENCE.md` (added Oct 17 19:20) | `fedaml/dashboard/static/` (AUDIT keeps the Python app, routes and tests) |
 
 Each agent: read this file + `docs/CONTRACTS.md` + your brief. Work only in the paths you own; if you must change a shared contract, write the proposal in `STATUS.md` under "Contract changes" and ping MASTER. Never edit another agent's files. Keep every step runnable; commit small and often.
 
