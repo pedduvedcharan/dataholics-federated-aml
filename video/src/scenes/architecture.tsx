@@ -36,8 +36,9 @@ const Box: React.FC<{
   p: number;
   border?: string;
   bg?: string;
+  dashed?: boolean;
   children: React.ReactNode;
-}> = ({ x, y, w, h, p, border = C.gray30, bg = C.white, children }) => (
+}> = ({ x, y, w, h, p, border = C.gray30, bg = C.white, dashed = false, children }) => (
   <div
     style={{
       position: "absolute",
@@ -46,7 +47,7 @@ const Box: React.FC<{
       width: w,
       height: h,
       background: bg,
-      border: `2px solid ${border}`,
+      border: `${dashed ? 3 : 2}px ${dashed ? "dashed" : "solid"} ${border}`,
       opacity: p,
       transform: `translateX(${(1 - p) * -30}px)`,
       boxSizing: "border-box",
@@ -57,20 +58,38 @@ const Box: React.FC<{
 );
 
 const STEPS = ["data", "train", "clip + noise"];
+const ROGUE_STEPS = ["data", "train", "poison"];
 
 const Bank: React.FC<{ i: number; delay: number }> = ({ i, delay }) => {
   const frame = useCurrentFrame();
   const p = useEnter(delay);
   const b = data.partition.banks[String(i + 1)];
+  const rogue = b.role === "rogue";
+  const steps = rogue ? ROGUE_STEPS : STEPS;
+  const on = (k: number) => ramp(frame, delay + 90 + k * 25, delay + 100 + k * 25) > 0.5;
   return (
-    <Box x={BANK_X} y={bankY(i)} w={BANK_W} h={BANK_H} p={p} border={C.blue20} bg={C.blue10}>
+    <Box
+      x={BANK_X}
+      y={bankY(i)}
+      w={BANK_W}
+      h={BANK_H}
+      p={p}
+      border={rogue ? C.red60 : C.blue20}
+      bg={rogue ? C.red10 : C.blue10}
+      dashed={rogue}
+    >
       <div style={{ display: "flex", alignItems: "center", height: "100%", padding: "0 18px", gap: 14 }}>
-        <div style={{ width: 150, whiteSpace: "nowrap" }}>
-          <div style={{ fontFamily: fonts.condensed, fontWeight: 600, fontSize: 32 }}>Bank {i + 1}</div>
-          <div style={{ fontFamily: fonts.mono, fontSize: 17, color: C.gray70 }}>{fmtInt(b.rows_raw)} rows</div>
+        <div style={{ width: rogue ? 222 : 150, whiteSpace: "nowrap" }}>
+          <div style={{ fontFamily: fonts.condensed, fontWeight: 600, fontSize: rogue ? 28 : 32, color: rogue ? C.red60 : C.gray100 }}>
+            {rogue ? `Bank ${i + 1} · rogue` : `Bank ${i + 1}`}
+          </div>
+          <div style={{ fontFamily: fonts.mono, fontSize: rogue ? 15 : 17, color: rogue ? C.red60 : C.gray70 }}>
+            {rogue ? `(synthetic) · ${fmtInt(b.rows_raw)} rows` : `${fmtInt(b.rows_raw)} rows`}
+          </div>
         </div>
-        {STEPS.map((s, k) => {
-          const on = ramp(frame, delay + 90 + k * 25, delay + 100 + k * 25);
+        {steps.map((s, k) => {
+          const bad = rogue && k === 2;
+          const lit = bad ? C.red60 : C.blue60;
           return (
             <div
               key={s}
@@ -78,9 +97,9 @@ const Bank: React.FC<{ i: number; delay: number }> = ({ i, delay }) => {
                 fontFamily: fonts.mono,
                 fontSize: 19,
                 padding: "6px 10px",
-                background: on > 0.5 ? C.blue60 : C.white,
-                color: on > 0.5 ? C.white : C.gray70,
-                border: `1px solid ${C.blue20}`,
+                background: on(k) ? lit : C.white,
+                color: on(k) ? C.white : bad ? C.red60 : C.gray70,
+                border: `1px solid ${bad ? C.red60 : C.blue20}`,
                 whiteSpace: "nowrap",
               }}
             >
@@ -89,6 +108,22 @@ const Bank: React.FC<{ i: number; delay: number }> = ({ i, delay }) => {
           );
         })}
       </div>
+      {i === 0 ? (
+        <div
+          style={{
+            position: "absolute",
+            right: 18,
+            bottom: 3,
+            fontFamily: fonts.mono,
+            fontSize: 14,
+            color: C.blue70,
+            whiteSpace: "nowrap",
+            opacity: on(2) ? 1 : 0,
+          }}
+        >
+          ▲ noise added here, inside the bank
+        </div>
+      ) : null}
     </Box>
   );
 };
@@ -217,7 +252,15 @@ export const Architecture: React.FC<{ narration: string }> = ({ narration }) => 
         </defs>
         {inArrows.map((p, i) =>
           p > 0 ? (
-            <DrawnLine key={i} pts={arrow(BANK_X + BANK_W, bankMid(i), DOOR.x - 6, doorMid - 60 + i * 30)} progress={p} color={C.blue60} width={3} dots={false} />
+            <DrawnLine
+              key={i}
+              pts={arrow(BANK_X + BANK_W, bankMid(i), DOOR.x - 6, doorMid - 60 + i * 30)}
+              progress={p}
+              color={i === 4 ? C.red60 : C.blue60}
+              width={i === 4 ? 4 : 3}
+              dash={i === 4 ? "10 8" : undefined}
+              dots={false}
+            />
           ) : null,
         )}
         {mainArrow > 0 ? (
@@ -257,7 +300,7 @@ export const Architecture: React.FC<{ narration: string }> = ({ narration }) => 
           />
         ) : null}
         {particles.map((pt, i) => (
-          <rect key={i} x={pt.x - 9} y={pt.y - 9} width={18} height={18} fill={C.blue60} stroke={C.white} strokeWidth={2} />
+          <rect key={i} x={pt.x - 9} y={pt.y - 9} width={18} height={18} fill={i === 4 ? C.red60 : C.blue60} stroke={C.white} strokeWidth={2} />
         ))}
         {blockedVisible ? (
           <g transform={`translate(${BANK_X + BANK_W + (DOOR.x - BANK_X - BANK_W - 40) * blockT}, ${bankMid(1) + (doorMid - 120 - bankMid(1)) * blockT})`}>
@@ -309,7 +352,7 @@ export const Architecture: React.FC<{ narration: string }> = ({ narration }) => 
       <Box x={COORD.x} y={COORD.y} w={COORD.w} h={COORD.h} p={coord} border={C.blue60} bg={C.white}>
         <div style={{ padding: 24 }}>
           <div style={{ fontFamily: fonts.condensed, fontWeight: 600, fontSize: 40 }}>Coordinator</div>
-          <div style={{ fontFamily: fonts.mono, fontSize: 18, color: C.gray70, whiteSpace: "nowrap" }}>FedAvg · diff. privacy</div>
+          <div style={{ fontFamily: fonts.mono, fontSize: 18, color: C.gray70, whiteSpace: "nowrap" }}>FedAvg · cheater screening</div>
           {[
             ["screen", "norm + direction checks drop cheaters"],
             ["average", "weighted by bank size"],

@@ -20,6 +20,7 @@ const d = raw as unknown as {
   baselines: {
     centralized_logreg: { auc: number; ap: number };
     federated: { auc: number; ap: number };
+    per_bank: Record<string, Record<string, { pooled_auc: number; pooled_ap: number }>>;
   };
   footprint: {
     total_peak_rss_mb_sum: number;
@@ -63,9 +64,14 @@ export const honestExcluded = d.rogue_on.rounds.reduce(
 
 export const laundryOneIn = Math.round(d.partition.n_rows_total / d.partition.n_laundering_total);
 
-/** Grouped bars for scene 6. "best single bank" is not stored as one pair in data.json: SCRIPT. */
+/**
+ * Grouped bars for scene 6. "Best single bank" is the best model per metric, both bank 4:
+ * AUC from logistic regression, precision from the tree model (HistGradientBoosting); see footnote.
+ */
+const bank4 = d.baselines.per_bank["4"];
+export const bestSingleBank = { auc: bank4.logreg.pooled_auc, ap: bank4.hgb.pooled_ap };
 export const baselineBars = [
-  { label: "Best single bank", auc: 0.986, ap: 0.405, source: "script" },
+  { label: "Best single bank*", auc: bestSingleBank.auc, ap: bestSingleBank.ap, source: "data" },
   {
     label: "Centralized pooling",
     auc: d.baselines.centralized_logreg.auc,

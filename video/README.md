@@ -40,7 +40,8 @@ Just drop the file in `public/` and render again; no code change.
 - `src/components/` Caption (lower third, timed by word count), SceneShell, chart helpers, Pill/Stamp.
 - `src/scenes/<id>.tsx` one file per scene.
 
-## Numbers not in data.json
+## Numbers
 
-Only "best single bank 0.986 / 0.405" in scene 6 comes from the script (`baselineBars` in `src/data.ts`);
-everything else is read from `data.json`.
+Every number is read from `data.json`. "Best single bank*" in scene 6 is the best model per metric, both
+bank 4 (`baselines.per_bank["4"]`): AUC from logistic regression (0.986), precision from the tree model
+HistGradientBoosting (0.405); the scene shows this as a footnote.

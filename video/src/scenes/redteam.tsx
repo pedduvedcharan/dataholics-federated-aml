@@ -49,7 +49,17 @@ const Row: React.FC<{ i: number }> = ({ i }) => {
       <line x1={cx - (cx - x(lo)) * wh} x2={cx - (cx - x(lo)) * wh} y1={y - 16} y2={y + 16} stroke={C.gray100} strokeWidth={4} opacity={wh} />
       <line x1={cx + (x(hi) - cx) * wh} x2={cx + (x(hi) - cx) * wh} y1={y - 16} y2={y + 16} stroke={C.gray100} strokeWidth={4} opacity={wh} />
       <circle cx={cx} cy={y} r={16 * p} fill={v.bg} stroke={C.gray100} strokeWidth={3} />
-      <text x={cx} y={y - 30} textAnchor="middle" fontFamily={fonts.mono} fontWeight={600} fontSize={28} fill={C.gray100} stroke={current ? C.blue10 : C.white} strokeWidth={8} paintOrder="stroke">
+      {/* value label beside the whisker, never across the coin-flip line: right of it, or left for high values */}
+      <text
+        x={r.attack_auc > 0.75 ? x(lo) - 22 : x(hi) + 22}
+        y={y + 10}
+        textAnchor={r.attack_auc > 0.75 ? "end" : "start"}
+        fontFamily={fonts.mono}
+        fontWeight={600}
+        fontSize={28}
+        fill={C.gray100}
+        opacity={wh}
+      >
         {fmt3(r.attack_auc)}
       </text>
       <foreignObject x={1390} y={y - 40} width={360} height={90} opacity={vp}>

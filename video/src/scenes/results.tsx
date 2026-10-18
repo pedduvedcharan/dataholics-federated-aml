@@ -5,7 +5,7 @@ import { C, fonts } from "../theme";
 import { SceneShell } from "../components/SceneShell";
 import { DrawnLine, XRounds, YGrid, scale } from "../components/charts";
 import { ramp, useFadeUp } from "../components/anim";
-import { baselineBars, dpoffAuc, dponAuc, fmt3 } from "../data";
+import { baselineBars, bestSingleBank, dpoffAuc, dponAuc, fmt3 } from "../data";
 
 // line chart geometry (SVG coordinates inside the left card)
 const LW = 800;
@@ -126,6 +126,10 @@ export const Results: React.FC<{ narration: string }> = ({ narration }) => {
               AUC {fmt3(ours.auc)} → {fmt3(noisy.auc)}
             </b>
           </div>
+        </div>
+        <div style={{ marginTop: 18, fontFamily: fonts.sans, fontSize: 19, color: C.gray70, lineHeight: 1.35, opacity: right.opacity }}>
+          * best model per metric, both bank 4: AUC from logistic regression ({fmt3(bestSingleBank.auc)}), precision
+          from a tree model ({fmt3(bestSingleBank.ap)})
         </div>
       </div>
     </SceneShell>
