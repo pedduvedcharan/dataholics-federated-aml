@@ -447,6 +447,32 @@ function renderRedteam(s) {
     <div class="verdict ${vcls}">${esc(vtxt)}</div>`;
 }
 
+/* dot-and-whisker: attack AUC with 90% CI per setting; x 0.45–1.0; dashed coin-flip line at 0.5 */
+function auditChart(entries, isCurrent) {
+  const W = 860, rowH = 30, top = 24, left = 92, right = 250, xMin = 0.45, xMax = 1.0;
+  const H = top + entries.length * rowH + 22;
+  const x = v => left + (Math.max(xMin, Math.min(xMax, v)) - xMin) / (xMax - xMin) * (W - left - right);
+  const col = v => { const u = String(v || '').toUpperCase(); return u === 'PROTECTED' ? css('--s3') : css('--crit'); };
+  const ticks = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+  let g = ticks.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="${top - 6}" y2="${H - 22}" stroke="${css('--grid')}" stroke-width="1"/>
+    <text x="${x(t)}" y="${H - 8}" fill="${css('--muted')}" font-size="11" text-anchor="middle">${t.toFixed(1)}</text>`).join('');
+  g += `<line x1="${x(0.5)}" x2="${x(0.5)}" y1="${top - 10}" y2="${H - 22}" stroke="${css('--ink-2')}" stroke-width="1.5" stroke-dasharray="4 4"/>
+    <text x="${x(0.5) + 4}" y="${top - 12}" fill="${css('--ink-2')}" font-size="11">coin flip 0.5</text>
+    <text x="${W - right}" y="${top - 12}" fill="${css('--muted')}" font-size="11" text-anchor="end">attack AUC · 90% CI →</text>`;
+  entries.forEach(([k, r], i) => {
+    const y = top + i * rowH + rowH / 2; const c = col(r.verdict);
+    const ci = Array.isArray(r.attack_auc_ci90) ? r.attack_auc_ci90 : [r.attack_auc, r.attack_auc];
+    if (isCurrent(k, r)) g += `<rect x="2" y="${y - rowH / 2 + 2}" width="${W - 4}" height="${rowH - 4}" rx="5" fill="none" stroke="${css('--s1')}" stroke-width="1.5"/>`;
+    g += `<text x="10" y="${y + 4}" fill="${css('--ink')}" font-size="12">${esc(k)}</text>
+      <line x1="${x(ci[0])}" x2="${x(ci[1])}" y1="${y}" y2="${y}" stroke="${c}" stroke-width="2"/>
+      <line x1="${x(ci[0])}" x2="${x(ci[0])}" y1="${y - 5}" y2="${y + 5}" stroke="${c}" stroke-width="2"/>
+      <line x1="${x(ci[1])}" x2="${x(ci[1])}" y1="${y - 5}" y2="${y + 5}" stroke="${c}" stroke-width="2"/>
+      <circle cx="${x(r.attack_auc)}" cy="${y}" r="5.5" fill="${c}" stroke="${css('--surface')}" stroke-width="2"/>
+      <text x="${W - right + 12}" y="${y + 4}" fill="${css('--ink-2')}" font-size="12">${f3(r.attack_auc)} · ${esc(String(r.verdict || '').toUpperCase())}${isCurrent(k, r) ? ' · this run' : ''}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px; display:block; margin:2px 0 8px" role="img" aria-label="attack AUC with 90% confidence interval per DP setting">${g}</svg>`;
+}
+
 /* DP auditing game (REDTEAM): rows = {setting: {sigma, attack_acc, attack_auc, attack_auc_ci90, eps_empirical_lower_95, eps_accountant_1round, verdict, n_scored}} */
 function renderAudit(s, rt) {
   const entries = Object.entries(rt.rows).filter(([, r]) => r && typeof r === 'object');
@@ -482,6 +508,7 @@ function renderAudit(s, rt) {
     : '';
   $('red-body').className = '';
   $('red-body').innerHTML = `<div style="font-size:11px; color:var(--ink-2); margin-bottom:4px">attack: <b>${esc(rt.attack || 'canary_update')}</b>${rt.bank != null ? ' · bank ' + esc(rt.bank) : ''}${rt.target_row ? ' · canary: ' + esc(rt.target_row) : ''}${rt.target && typeof rt.target === 'string' && rt.target.length > 20 ? ' · target: ' + esc(rt.target) : ''}${rt.dp_on_mode ? ' · DP mode: ' + esc(rt.dp_on_mode) : ''}</div>
+    ${auditChart(entries, isCurrent)}
     <table><tr><th>setting</th><th class="num">σ</th><th class="num">attack AUC</th><th class="num">90% CI</th><th class="num">ε lower bound (measured)</th><th class="num">ε accountant (1 round)</th><th style="padding-left:14px">verdict</th></tr>` +
     entries.map(([k, r]) => `<tr${isCurrent(k, r) ? ' style="outline:1px solid var(--s1)"' : ''}><td>${esc(k)}</td><td class="num">${esc(r.sigma ?? '—')}</td><td class="num">${f3(r.attack_auc)}</td><td class="num">${ci(r)}</td><td class="num">${r.eps_empirical_lower_95 == null ? '—' : f2(r.eps_empirical_lower_95)}</td><td class="num">${r.eps_accountant_1round == null ? '—' : f2(r.eps_accountant_1round)}</td><td style="padding-left:14px">${vtag(r.verdict)}</td></tr>`).join('') +
     `</table>
