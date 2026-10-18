@@ -1653,7 +1653,7 @@ async function wfLoad() {
   const pick = (wb && wf.demos[wb] ? [wb, wf.demos[wb]] : null) || lab[0] || (wf.demos[4] ? [4, wf.demos[4]] : null) || avail.find(([b]) => b !== 1) || avail[0];
   $('wf-banks').innerHTML = [1, 2, 3, 4].map(b => `<button type="button" data-b="${b}" aria-pressed="false"${wf.demos[b] ? '' : ' title="no bank-local demo file for this bank"'}>Bank ${b}</button>`).join('');
   $('wf-banks').querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => wfSetBank(+btn.dataset.b)));
-  wfSetBank(pick ? pick[0] : 2);
+  wfSetBank(pick ? pick[0] : (wb || 4));
 }
 function wfSetBank(b) {
   wfStop(true);
