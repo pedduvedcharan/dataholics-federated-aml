@@ -72,6 +72,7 @@ def extract_facts(alert: dict, model: dict | None = None) -> dict[str, str]:
                          f"moved funds onward in {n_r} payment{'s' * (n_r != 1)}")
     return {
         "ALERT_ID": str(alert["alert_id"]),
+        "SAMPLE": str(alert.get("sample_desc") or "the regulator's held-out sample"),
         "SENDER_ACTIVITY": sender_activity,
         "RECEIVER_ACTIVITY": receiver_activity,
         "SENDER": str(trig["from_acct"]),
@@ -156,7 +157,7 @@ def template_sections(alert: dict, facts: dict[str, str]) -> dict[str, str]:
     """Template engine: the three prose sections, filled from facts and top features."""
     summary = (
         "Account [SENDER] at bank [SENDER_BANK] paid [AMT] [CUR] by [FMT] to account [RECEIVER] "
-        "at bank [RECEIVER_BANK] on [TS]. In the regulator's held-out sample the sender [SENDER_ACTIVITY] "
+        "at bank [RECEIVER_BANK] on [TS]. In [SAMPLE] the sender [SENDER_ACTIVITY] "
         "and the receiver [RECEIVER_ACTIVITY]. The chain of [N_ROWS] transactions reviewed "
         "here totals [TOTAL_AMT] and touches [N_BANKS] institution(s) (bank ids [BANKS]). The federated "
         "model scored the trigger transaction [SCORE], rank [RANK] in the queue ranked for analyst review."

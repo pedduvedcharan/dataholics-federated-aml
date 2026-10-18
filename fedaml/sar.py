@@ -180,7 +180,7 @@ Account **{facts['SENDER']}** (bank {facts['SENDER_BANK']}) → account **{facts
 ## Institutions involved
 {institutions_table(alert)}
 
-Chain reviewed ({facts['N_ROWS']} rows, regulator-side held-out sample; synthetic IBM AML data):
+Chain reviewed ({facts['N_ROWS']} rows, {facts['SAMPLE']}; synthetic IBM AML data):
 
 {chr(10).join(chain)}
 
@@ -188,7 +188,7 @@ Chain reviewed ({facts['N_ROWS']} rows, regulator-side held-out sample; syntheti
 {sections['recommended_action']}
 
 ## Model attribution
-- Global model sha256: `{facts['MODEL_SHA']}` (round {facts['MODEL_ROUND']}), trained by federated averaging; no raw transaction left any bank.
+- Global model sha256: `{facts['MODEL_SHA']}` (round {facts['MODEL_ROUND']}), trained by federated averaging; no raw transaction left any bank.{(chr(10) + '- ' + alert['scope_note']) if alert.get('scope_note') else ''}
 - Score for the trigger transaction: {facts['SCORE']}, rank {facts['RANK']} in the filtered review queue.
 - Ground truth (not known to any bank or to the model): **{label}**.
 - Top feature contributions (value × weight):
