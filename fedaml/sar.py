@@ -76,7 +76,8 @@ def allowed_counts(alert: dict, facts: dict[str, str]) -> set[int]:
     """Every count the code-written sections state: chain counts plus decoded count features."""
     from fedaml.llm.facts import feature_fact
 
-    nums = {int(facts[k]) for k in ("N_SENDER_OTHER", "N_DISTINCT_RECEIVERS", "N_RECEIVER_ONWARD", "N_ROWS", "N_BANKS")
+    nums = {int(facts[k]) for k in ("N_SENDER_OTHER", "N_OTHER_RECEIVERS", "N_DISTINCT_RECEIVERS", "N_RECEIVER_ONWARD",
+                                         "N_ROWS", "N_BANKS")
             if str(facts.get(k, "")).isdigit()}
     for f in alert.get("top_features", []):
         nums |= {int(x) for x in re.findall(r"\b\d+\b", feature_fact(f))}

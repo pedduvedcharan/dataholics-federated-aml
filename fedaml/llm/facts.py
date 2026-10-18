@@ -91,6 +91,7 @@ def extract_facts(alert: dict, model: dict | None = None) -> dict[str, str]:
         "TOTAL_AMT": _fmt_amt(cs.get("total_amt_paid")),
         "N_SENDER_OTHER": str(cs.get("sender_other_txns", 0)),
         "N_RECEIVER_ONWARD": str(cs.get("receiver_onward_txns", 0)),
+        "N_OTHER_RECEIVERS": str(n_rcv),
         "N_DISTINCT_RECEIVERS": str(n_rcv + 1),  # the sender's other receivers plus the trigger's receiver
         "BANKS": ", ".join(str(b) for b in alert.get("banks_involved", [])),
         "N_BANKS": str(cs.get("n_banks", len(alert.get("banks_involved", [])))),
