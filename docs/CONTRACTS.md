@@ -94,3 +94,39 @@ python -m fedaml.sar --alert-id <id> [--engine llm|template]
 - Every module: `logging` at INFO with the module name; no prints in library code.
 - `--seed 42` everywhere; results must be reproducible.
 - Type hints, docstrings on public functions, no file > 300 lines without a reason.
+
+## 9. Bank-local scoring, alerts and reports (added Oct 17 2026 21:00 CDT, MASTER, lead's redesign)
+
+**Why.** After federated training, inference, alerts and investigation reports belong inside each bank. The
+central (coordinator / regulator) API must not expose per-transaction details. Until now `state/alerts.json`
+and `state/sar/` were built centrally from the mixed `data/global_test.csv`, and `/api/state` + `/api/sar/<id>`
+exposed amounts, currencies, timestamps, bank lists and account ids. That is replaced by this section.
+
+**Honest boundary.** In the demo all banks and the regulator run on one VM and one dashboard process; the bank
+boundary below is a *logical* access boundary (separate route prefix, separate files, tests), not network
+isolation. Say so wherever it is shown.
+
+### 9.1 Files (GENAI writes, `python -m fedaml.bank_local --banks 1,2,3,4`)
+- `state/bank_local/bank_<b>/alerts.json` — that bank's own review queue, scored with the final federated model
+  `state/global_final_dpon.json` on **its own** `data/banks/bank_<b>/test.csv`, featurized within the bank:
+  `{"meta": {"bank_id", "model_sha256", "model_round", "n_scored", "k", "threshold": {"value", "rule"}, "labelled_in_top_k", "prevalence", "filters", "wording"}, "alerts": [{"alert_id": "B<b>-A<nn>", "rank", "score", "ts", "from_acct", "to_acct", "to_bank", "amt_paid", "cur_paid", "fmt", "is_laundering", "has_sar"}]}`.
+  `threshold.rule` states how the alert threshold is set (e.g. "score of rank k in this bank's review queue").
+- `state/bank_local/bank_<b>/demo.json` — one deterministic demo transaction for the walkthrough (the bank's top
+  labelled-laundering alert, or the documented top alert if none):
+  `{"bank_id", "alert_id", "synthetic": true, "source": "data/banks/bank_<b>/test.csv row <i>", "model": {"file", "sha256", "round"}, "transaction": {"ts", "from_acct", "to_acct", "to_bank", "amt_paid", "cur_paid", "amt_recv", "cur_recv", "fmt"}, "features": [{"name", "meaning", "value", "weight", "contribution"} × 20], "intercept", "score", "threshold": {"value", "rule"}, "alerted", "rank", "priority", "label": {"is_laundering", "note"}, "related": [≤ 10 same-bank rows], "sar": {"alert_id", "engine": "llm"|"template", "model_file", "seconds", "fallback_reason"}}`.
+  `score` is computed by the same logistic formula as `fedaml.baselines.predict_proba_json` from the saved model;
+  never typed in.
+- `state/bank_local/bank_<b>/sar/B<b>-A<nn>.md` — the bank's report for its demo alert (and optionally its top 3),
+  written by `fedaml.sar` (code writes facts; LLM one paragraph; claim check; template fallback labelled).
+- `state/bank_local/summary.json` — **aggregate only, safe for the regulator**:
+  `{"generated_at", "model_sha256", "per_bank": {"<b>": {"n_scored", "k", "n_alerts", "labelled_in_top_k", "reports_written"}}}`.
+  No ids, amounts, currencies, timestamps or account numbers.
+
+### 9.2 Routes (AUDIT, `fedaml/dashboard/__init__.py`)
+- Central, regulator view: `/api/state` keeps every existing key **except** the per-alert rows; `alerts` is replaced
+  by `alerts_aggregate` (= `summary.json`). Central `/api/sar/<id>` is removed.
+- Bank-scoped (the "inside bank <b>" view of the demo): `GET /api/bank/<b>/alerts`, `GET /api/bank/<b>/demo`,
+  `GET /api/bank/<b>/sar/<alert_id>`; `<b>` ∈ {1,2,3,4}; `alert_id` must match `^B<b>-A[0-9]{2}$` (a bank can only
+  read its own ids); the resolved path must sit directly in that bank's folder; 404 otherwise.
+- Tests: `/api/state` JSON contains none of the keys `from_acct`, `to_acct`, `amt_paid`, `amt_recv`, `ts` at any
+  depth; bank routes reject cross-bank ids, traversal, bad bank ids; responses are byte-for-byte the files.
