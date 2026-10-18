@@ -275,6 +275,7 @@
   #hdr { gap: 1.1rem; }
   #hdr .brand span { color: #78A9FF; }
   body:not(.dark-hdr) #hdr .brand span { color: var(--primary); }
+  .bars2 .trk, .bars2 .fil { display: block; }
 
   /* ===== audit panels (scoped under .dash; sizes in rem so they scale with the slide) ===== */
   .dash .num, .dash td.num, .dash .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
@@ -651,10 +652,12 @@
       </div>
       <div class="cardx">
         <h3>Containers on the LinuxONE machine <span class="tag ext" style="margin-left:.4rem">terminal capture, 2026-10-17 22:03 UTC</span></h3>
-        <pre class="term" aria-label="Terminal capture from the LinuxONE machine"><span class="p">$</span> uname -m && nproc
-<span class="g">s390x</span>
-3
-<span class="p">$</span> docker ps                     <span class="c"># captured during training</span>
+        <pre class="term" aria-label="Terminal capture from the LinuxONE machine"><span class="p">$</span> uname -a
+Linux dataholics 6.8.0-147-generic #147-Ubuntu SMP … <span class="g">s390x s390x s390x</span> GNU/Linux
+<span class="p">$</span> lscpu | head
+Architecture:  <span class="g">s390x</span>        Byte Order: Big Endian      CPU(s): 3
+Vendor ID:     IBM/S390     Machine type: 9175          Hypervisor: z/VM 7.3.0
+<span class="p">$</span> docker ps                       <span class="c"># captured 2026-10-17 22:03 UTC, during training</span>
 NAMES         IMAGE    STATUS                    PORTS
 bank1         fedaml   Up 4 seconds
 bank2         fedaml   Up 4 seconds
