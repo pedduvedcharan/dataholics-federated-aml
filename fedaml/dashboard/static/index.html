@@ -3,129 +3,230 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Regulator View — Cross-Bank AML</title>
+<title>Dataholics · Regulator view</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
+  /* Light theme only. Palette logic, type scale, radii and component shapes follow docs/UI_REFERENCE.md (conventions only). */
   :root {
-    color-scheme: dark;
-    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232322;
-    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
-    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s7: #9085e9;
-    --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --crit: #d03b3b;
+    color-scheme: light;
+    --page: #F4F4F1; --surface: #FFFFFF; --surface-2: #F7F7F4;
+    --ink: #272727; --ink-2: #474744; --muted: #63635E;
+    --primary: #04433D; --primary-2: #0B5C54; --sage: #CAE3DA; --sage-line: #B4D3C7;
+    --navy: #15295A; --tan: #C19B80; --tan-line: #A9846A; --lilac: #A884BC; --orange: #F08A55; --badge: #C9531F; --cream: #F7E3B5;
+    --grid: #ECEDEF; --axis: #E5E7EA; --hair: #E5E7EA; --border: #E5E7EA;
+    /* chart tokens read by the page's JS through css('--x'): names fixed, values remapped */
+    --s1: #3985BE; --s2: #E0763E; --s3: #04433D; --s7: #8B63A3;
+    --good: #2C7A5C; --warn: #B7790B; --serious: #D4652F; --crit: #B8352B;
+    --shadow: 0 9.7px 16.7px rgba(0,0,0,0.10); --shadow-soft: 0 4px 14px rgba(0,0,0,0.06);
+    --sans: "Geist", Arial, sans-serif; --mono: "Geist Mono", ui-monospace, Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--page); color: var(--ink);
-    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  body { padding: 10px 16px 24px; }
-  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
-  header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: 0.01em; }
-  header .sub { color: var(--ink-2); font-size: 12px; }
-  header .right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
-    color: var(--ink-2); background: var(--surface); white-space: nowrap; }
-  .pill.on  { border-color: var(--good); color: var(--ink); }
-  .pill.off { color: var(--muted); }
-  .pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; background: var(--muted); vertical-align: 1px; }
+  html, body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 var(--sans); }
+  body { padding: 12px 20px 40px; }
+  b, strong { font-weight: 600; }
+  .num, td.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ---- pill top bar ---- */
+  .topbar { position: sticky; top: 12px; z-index: 20; max-width: 1180px; margin: 0 auto; height: 56px;
+    display: flex; align-items: center; gap: 18px; padding: 10px 13px 10px 22px; border-radius: 40px;
+    background: rgba(255,255,255,0.86); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: var(--shadow); }
+  .topbar .mark { font-size: 16px; font-weight: 500; color: var(--primary); white-space: nowrap; letter-spacing: -0.01em; }
+  .topbar .mark .dotsep { color: var(--muted); font-weight: 400; }
+  .topbar nav { display: flex; gap: 18px; margin-left: 10px; flex-wrap: nowrap; overflow: hidden; }
+  .topbar nav a { font-size: 14px; font-weight: 500; color: var(--ink); text-decoration: none; white-space: nowrap; }
+  .topbar nav a:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 4px; }
+  .topbar .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .btn-pill { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 30px;
+    font-size: 13.5px; font-weight: 500; white-space: nowrap; border: 1px solid var(--primary); }
+  .btn-pill.filled { background: var(--primary); color: #fff; }
+  .btn-pill.outline { background: transparent; color: var(--primary); }
+  .btn-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .btn-pill.live .dot { background: var(--good); box-shadow: 0 0 0 3px rgba(44,122,92,0.22); }
+  .btn-pill.offline { color: var(--crit); border-color: var(--crit); }
+  .btn-pill.offline .dot { background: var(--crit); }
+  .btn-pill.filled.dpoff { background: var(--crit); border-color: var(--crit); }
+
+  /* ---- page head ---- */
+  .pagehead { max-width: 1240px; margin: 22px auto 16px; display: flex; align-items: flex-end; gap: 16px 24px; flex-wrap: wrap; }
+  .pagehead h1 { font-size: 26px; line-height: 1.05; font-weight: 500; margin: 0; letter-spacing: -0.015em; }
+  .pagehead .sub { color: var(--ink-2); font-size: 14px; margin-top: 4px; }
+  .pagehead .files { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .pill { display: inline-flex; align-items: center; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--hair);
+    color: var(--ink-2); background: transparent; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
+  .pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+  .pill.on { border-color: var(--sage-line); background: rgba(202,227,218,0.55); color: var(--ink); }
   .pill.on .dot { background: var(--good); }
-  .pill.live .dot { background: var(--good); box-shadow: 0 0 0 3px rgba(12,163,12,0.25); }
-  .pill.offline .dot { background: var(--crit); }
-  #banner { display: none; background: #3a2a00; color: #ffd98a; border: 1px solid var(--warn);
-    padding: 6px 12px; border-radius: 6px; margin-bottom: 10px; font-weight: 600; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+  .pill.off { color: var(--muted); border-style: dashed; }
+  #banner { display: none; max-width: 1240px; margin: 0 auto 16px; background: var(--cream); color: #5a4100; border: 1px solid #E2C27A;
+    padding: 9px 18px; border-radius: 30px; font-weight: 500; }
+
+  /* ---- panels: sage cards ---- */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1240px; margin: 0 auto; }
+  .panel { background: var(--sage); border: 1px solid var(--sage); border-radius: 25px; padding: 28px; min-width: 0; scroll-margin-top: 84px; }
   .panel.wide { grid-column: 1 / -1; }
-  .panel h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--muted); display: flex; gap: 10px; align-items: baseline; }
-  .panel h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
+  .panel h2 { margin: 0 0 18px; font-size: 22px; line-height: 1.2; font-weight: 500; color: var(--primary); letter-spacing: -0.01em;
+    display: flex; gap: 6px 14px; align-items: baseline; flex-wrap: wrap; }
+  .panel h2 .note { font-size: 13px; font-weight: 400; color: var(--ink-2); letter-spacing: 0; }
   .waiting { color: var(--muted); font-style: italic; padding: 8px 0; }
-  /* regulator view */
-  .reg { display: grid; grid-template-columns: 1.15fr 1fr 1fr 1fr 2.2fr; gap: 12px; align-items: stretch; }
-  .tile { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; border: 1px solid var(--border); }
-  .tile .lbl { font-size: 11px; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.06em; }
-  .tile .val { font-size: 36px; line-height: 1.1; font-weight: 650; margin-top: 2px; }
-  .tile .meta { font-size: 11px; color: var(--muted); margin-top: 2px; min-height: 14px; }
-  .tile.good { border-color: var(--good); }
-  .tile.good .val { color: var(--good); }
-  .tile.crit { border-color: var(--crit); }
+  .card { background: var(--surface); border-radius: 16px; padding: 18px 20px; box-shadow: var(--shadow-soft); min-width: 0; }
+  .card + .card, .card + table, .card + div { margin-top: 14px; }
+  .card-title { font-size: 13px; font-weight: 500; color: var(--primary); margin: 0 0 10px; }
+  .small { font-size: 12.5px; color: var(--ink-2); }
+
+  /* ---- 1. egress: KPI cards + alert list ---- */
+  .reg { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 14px; align-items: stretch; }
+  .tile { background: var(--surface); border-radius: 16px; padding: 18px 20px; box-shadow: var(--shadow-soft); display: flex; flex-direction: column; }
+  .tile .lbl { font-size: 15px; font-weight: 500; color: var(--primary); }
+  .tile .val { font-size: 56px; line-height: 1; font-weight: 400; color: var(--primary); margin-top: 14px; letter-spacing: -0.02em; font-family: var(--sans); font-variant-numeric: tabular-nums; }
+  .tile.hero .val { font-size: 84px; line-height: 0.91; }
+  .tile .meta { font-size: 13px; color: var(--ink-2); margin-top: auto; padding-top: 10px; min-height: 18px; }
+  .tile .val .ic { font-size: 30px; vertical-align: 0.9em; margin-right: 8px; color: var(--good); }
+  .tile.hero .val .ic { font-size: 30px; vertical-align: 1.3em; }
   .tile.crit .val { color: var(--crit); }
-  .tile .val .ic { font-size: 22px; vertical-align: 6px; margin-right: 4px; }
-  .tail { background: #121211; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
-    font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; height: 100%; }
-  .tail .l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
-  .tail .l .t { color: var(--muted); }
-  .tail .l .k { color: var(--s1); }
-  .tail .l.blocked { color: var(--crit); font-weight: 600; }
-  .tail .l.blocked .k { color: var(--crit); }
-  .tail .l.failed { color: var(--serious); }
-  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: 3px 8px 3px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
-  th { color: var(--muted); font-weight: 500; font-size: 11px; }
-  td.num, th.num { text-align: right; padding-right: 0; }
-  tr.ex td { background: rgba(208,59,59,0.10); }
-  .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-  .tag.ok { background: rgba(12,163,12,0.18); color: #6fe06f; }
-  .tag.bad { background: rgba(208,59,59,0.20); color: #ff8a8a; }
-  .tag.warn { background: rgba(250,178,25,0.18); color: #ffd98a; }
-  .chartbox { position: relative; height: 210px; }
-  .legendrow { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--ink-2); margin-top: 4px; }
-  .legendrow .sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: 3px; margin-right: 5px; }
-  /* privacy meter */
-  .meter { margin: 6px 0 8px; }
-  .meter .bar { height: 22px; background: var(--surface-2); border-radius: 6px; border: 1px solid var(--border); overflow: hidden; position: relative; }
-  .meter .fill { height: 100%; width: 0; background: var(--good); transition: width .6s ease; border-radius: 5px 0 0 5px; }
+  .tile.crit { box-shadow: inset 0 0 0 2px var(--crit), var(--shadow-soft); }
+  .tile.crit .val .ic { color: var(--crit); }
+  .tailwrap { margin-top: 16px; }
+  .tailwrap .card-title { margin-bottom: 8px; }
+  .tail { display: flex; flex-direction: column; gap: 4px; font: 12.5px/1.4 var(--mono); }
+  .tail .l { display: flex; align-items: center; gap: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    background: rgba(255,255,255,0.62); border-radius: 10px; padding: 5px 12px; color: var(--ink); min-width: 0; }
+  .tail .l > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+  .tail .l .t { color: var(--muted); flex: none; }
+  .tail .l .k { color: var(--primary); font-weight: 500; }
+  .tail .l.blocked { background: #fff; box-shadow: inset 0 0 0 1px #F2C3A8; color: var(--ink); }
+  .tail .l.blocked .k { background: var(--badge); color: #fff; border-radius: 999px; padding: 1px 9px; font-size: 11.5px; font-weight: 500; }
+  .tail .l.failed .k { color: var(--serious); }
+
+  /* ---- data tables: dark header band, hairline rows ---- */
+  table { border-collapse: separate; border-spacing: 0; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--hair); vertical-align: middle; }
+  th { background: var(--primary); color: #fff; font-weight: 500; font-size: 12.5px; border-bottom: 0; position: sticky; top: 0; z-index: 1; }
+  tr:first-child th:first-child { border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
+  tr:first-child th:last-child { border-top-right-radius: 10px; border-bottom-right-radius: 10px; }
+  td.num, th.num { text-align: right; }
+  td.num { font-family: var(--mono); font-size: 12.5px; }
+  tr.ex td { background: #FCF0E8; }
+  table.plain th { background: transparent; color: var(--muted); border-bottom: 1px solid var(--hair); border-radius: 0 !important; position: static; }
+  .scroll { overflow: auto; }
+
+  /* ---- chips ---- */
+  .tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500;
+    border: 1px solid currentColor; background: transparent; white-space: nowrap; line-height: 1.5; }
+  .tag.ok { color: var(--good); background: rgba(44,122,92,0.08); }
+  .tag.bad { color: var(--crit); background: rgba(184,53,43,0.07); }
+  .tag.warn { color: #8A5A00; background: rgba(183,121,11,0.10); }
+  .tag.muted { color: var(--muted); border-color: var(--hair); }
+
+  .chartbox { position: relative; height: 220px; }
+  .legendrow { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+  .legendrow .sw { display: inline-block; width: 16px; height: 0; border-top: 2px solid; vertical-align: 3px; margin-right: 6px; }
+
+  /* ---- stat strip (tan band) + meter ---- */
+  .strip { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--tan); border-radius: 16px; overflow: hidden; color: var(--ink); }
+  .strip .cell { padding: 12px 16px 14px; border-left: 1px solid var(--tan-line); min-width: 0; }
+  .strip .cell:first-child { border-left: 0; }
+  .strip .k { font-size: 12px; font-weight: 500; color: #3a2a1f; }
+  .strip .v { font-size: 28px; line-height: 1.1; font-weight: 400; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .strip .m { font-size: 11.5px; color: #3a2a1f; margin-top: 3px; }
+  .meter { margin: 14px 0 12px; }
+  .meter .bar { height: 14px; background: #fff; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--hair); overflow: visible; position: relative; }
+  .meter .fill { height: 100%; width: 0; background: var(--primary); transition: width .6s ease; border-radius: 999px; }
   .meter .fill.warn { background: var(--warn); } .meter .fill.serious { background: var(--serious); } .meter .fill.crit { background: var(--crit); }
-  .meter .ticks { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 2px; }
-  .big { font-size: 28px; font-weight: 650; }
-  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12px; }
+  .meter .ticks { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-2); margin-top: 6px; }
+  .big { font-size: 40px; line-height: 1; font-weight: 400; color: var(--primary); letter-spacing: -0.02em; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font-size: 13px; }
   .kv dt { color: var(--muted); } .kv dd { margin: 0; }
-  .verdict { padding: 8px 10px; border-radius: 6px; font-weight: 600; margin-top: 8px; display: flex; gap: 8px; align-items: center; }
-  .verdict.good { background: rgba(12,163,12,0.15); border: 1px solid var(--good); }
-  .verdict.bad { background: rgba(208,59,59,0.15); border: 1px solid var(--crit); }
-  .verdict.warn { background: rgba(250,178,25,0.12); border: 1px solid var(--warn); }
-  .hbar { display: inline-block; height: 10px; background: var(--s1); border-radius: 0 3px 3px 0; vertical-align: middle; margin-right: 6px; }
-  .foot { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; }
-  body.solo header, body.solo #banner-keep-hidden { display: none; }
+
+  /* ---- verdict + entity card ---- */
+  .verdict { padding: 12px 16px; border-radius: 14px; font-weight: 500; margin-top: 14px; display: flex; gap: 8px; align-items: center; background: #fff; box-shadow: inset 4px 0 0 var(--muted); line-height: 1.45; }
+  .verdict.good { box-shadow: inset 4px 0 0 var(--good); }
+  .verdict.bad { box-shadow: inset 4px 0 0 var(--crit); }
+  .verdict.warn { box-shadow: inset 4px 0 0 var(--warn); }
+  .entity { display: flex; flex-direction: column; gap: 2px; }
+  .entity .e-lbl { font-size: 14px; font-weight: 500; color: var(--primary); }
+  .entity .e-id { font-size: 22px; color: var(--primary); font-family: var(--mono); }
+  .entity .e-st { font-size: 14px; color: var(--ink-2); }
+  .entity .e-name { font-size: 40px; line-height: 1.05; font-weight: 400; letter-spacing: -0.02em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .entity .e-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .kpis2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+  .kpis2 .tile .val { font-size: 48px; }
+  .kpis2 .tile .unit { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; }
+  .kpis2 .tile .val { margin-top: 10px; }
+
+  .hbar { display: inline-block; height: 12px; background: var(--s1); border-radius: 0 6px 6px 0; vertical-align: middle; margin-right: 10px; }
+  .foot { display: grid; grid-template-columns: 1fr; gap: 16px; }
+
+  /* ---- solo capture mode ---- */
+  body.solo .topbar, body.solo .pagehead, body.solo #banner-keep-hidden { display: none; }
   body.solo .grid > .panel:not(.solo-on), body.solo footer.panel:not(.solo-on) { display: none; }
   body.solo .panel.solo-on { grid-column: 1 / -1; }
   body.solo .panel.solo-on [style*="max-height"] { max-height: none !important; overflow: visible !important; }
-  body.solo .reg { grid-template-columns: 1fr 1fr 1fr 1fr 3fr; }
-  /* panel 7: alert queue + report */
-  .aq { display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; min-height: 0; }
-  .aq .queue { max-height: 560px; overflow: auto; }
-  .aq table tr.sel td { background: rgba(57,135,229,0.16); }
+
+  /* ---- 7. alert queue (case list) + entity card + report ---- */
+  .aq { display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; min-height: 0; }
+  .aq .queue { max-height: 600px; overflow: auto; padding: 10px; }
+  .aq table tr.sel td { background: var(--cream); }
+  .aq table tr.sel td .tag { background: #fff; }
   .aq table tr.pick { cursor: pointer; }
-  .aq table tr.pick:hover td { background: rgba(255,255,255,0.04); }
+  .aq table tr.pick:hover td { background: #F7F7F4; }
+  .aq table tr.sel:hover td { background: var(--cream); }
   .aq .tag { white-space: nowrap; }
-  .aq .queue table { font-size: 11.5px; }
-  .aq .queue th, .aq .queue td { padding: 3px 10px 3px 0; white-space: nowrap; }
-  .aq .queue td.cur { color: var(--muted); padding-left: 4px; }
-  .sar { background: #121211; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; max-height: 560px; overflow: auto; font-size: 12.5px; line-height: 1.5; }
-  .sar h1 { font-size: 15px; margin: 0 0 6px; } .sar h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 12px 0 4px; }
-  .sar p { margin: 4px 0 8px; color: var(--ink-2); } .sar ul { margin: 2px 0 8px 18px; padding: 0; color: var(--ink-2); }
-  .sar code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--ink); }
-  .sar table { font-size: 11px; margin: 4px 0 10px; } .sar em { color: var(--muted); }
-  .sar .llm { border-left: 3px solid var(--s7); background: rgba(144,133,233,0.10); padding: 6px 10px; border-radius: 0 6px 6px 0; color: var(--ink); }
-  .sar .llm-label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--s7); margin-bottom: 2px; font-weight: 700; }
-  .provenance { display: flex; gap: 14px; font-size: 11px; color: var(--ink-2); margin: 0 0 6px; flex-wrap: wrap; }
-  .provenance .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
-  body.solo .aq .queue, body.solo .sar { max-height: 600px; }
+  .aq .queue table { font-size: 12.5px; }
+  .aq .queue th, .aq .queue td { padding: 7px 10px; white-space: nowrap; }
+  .aq .queue td.cur { color: var(--muted); }
+  .aq .queue td.aid { color: var(--primary); font-family: var(--mono); font-weight: 500; }
+  #aq-meta { font-size: 14px; color: var(--ink); margin-bottom: 14px; }
+  .sar { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-soft); padding: 16px 22px; max-height: 470px; overflow: auto; font-size: 13.5px; line-height: 1.55; }
+  .sar h1 { font-size: 20px; font-weight: 500; margin: 0 0 8px; color: var(--primary); }
+  .sar h2 { font-size: 12.5px; font-weight: 500; color: var(--primary); margin: 16px 0 4px; }
+  .sar p { margin: 4px 0 10px; color: var(--ink); } .sar ul { margin: 2px 0 10px 18px; padding: 0; color: var(--ink); }
+  .sar code { font-family: var(--mono); font-size: 12px; color: var(--primary); }
+  .sar table { font-size: 12px; margin: 4px 0 12px; }
+  .sar th { background: transparent; color: var(--muted); border-bottom: 1px solid var(--hair); border-radius: 0 !important; position: static; padding: 4px 10px 4px 0; }
+  .sar td { padding: 4px 10px 4px 0; }
+  .sar em { color: var(--muted); }
+  .sar .llm { border-left: 4px solid var(--s7); background: rgba(168,132,188,0.14); padding: 10px 14px; border-radius: 0 12px 12px 0; color: var(--ink); }
+  .sar .llm-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--s7); margin-bottom: 3px; font-weight: 600; }
+  .provenance { display: flex; gap: 6px 16px; font-size: 12px; color: var(--ink-2); margin: 14px 0 8px; flex-wrap: wrap; }
+  .provenance .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
+  #aq-entity { margin-bottom: 0; }
+  body.solo .aq .queue, body.solo .sar { max-height: 620px; }
+
+  /* evidence footer: plain hairline table */
+  footer.panel#p-evidence { background: transparent; border: 1px solid var(--hair); max-width: 1240px; margin: 24px auto 0; }
+  footer.panel#p-evidence h2 { color: var(--ink); }
+  footer.panel#p-evidence td { font-size: 13px; vertical-align: top; }
+
   @media (max-width: 1000px) { .aq { grid-template-columns: 1fr; } }
-  @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } .reg { grid-template-columns: 1fr 1fr; } .foot { grid-template-columns: 1fr; } }
+  @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } .reg { grid-template-columns: 1fr 1fr; } .topbar nav { display: none; } .strip { grid-auto-flow: row; } }
 </style>
 </head>
 <body>
-<header>
-  <h1>Regulator view · cross-bank AML federation</h1>
-  <span class="sub">IBM LinuxONE (s390x) · sandboxed containers · only model updates leave a bank</span>
+<header class="topbar">
+  <span class="mark">Dataholics <span class="dotsep">·</span> Regulator view</span>
+  <nav>
+    <a href="#p-reg">Egress</a><a href="#p-train">Training</a><a href="#p-priv">Privacy</a><a href="#p-rogue">Rogue</a><a href="#p-red">Red team</a><a href="#p-alerts">Alerts</a><a href="#p-foot">Footprint</a>
+  </nav>
   <div class="right">
+    <span class="btn-pill outline" id="pill-live"><span class="dot"></span>connecting…</span>
+    <span class="btn-pill filled" id="pill-run">run: waiting</span>
+  </div>
+</header>
+<div class="pagehead">
+  <div>
+    <h1>Regulator view · cross-bank AML federation</h1>
+    <div class="sub">IBM LinuxONE (s390x) · sandboxed containers · only model updates leave a bank</div>
+  </div>
+  <div class="files">
     <span class="pill" id="pill-status"><span class="dot"></span>status.json</span>
     <span class="pill" id="pill-baselines"><span class="dot"></span>baselines.json</span>
     <span class="pill" id="pill-redteam"><span class="dot"></span>redteam.json</span>
     <span class="pill" id="pill-footprint"><span class="dot"></span>footprint.json</span>
-    <span class="pill" id="pill-live"><span class="dot"></span>connecting…</span>
   </div>
-</header>
+</div>
 <div id="banner">⚠ SAMPLE DATA — synthetic files for layout testing, not results from the VM</div>
 
 <div class="grid">
@@ -133,30 +234,32 @@
   <section class="panel wide" id="p-reg">
     <h2>1 · Regulator view — egress audit <span class="note" id="reg-note">waiting for logs/egress</span></h2>
     <div class="reg">
-      <div class="tile good" id="t-rows"><div class="lbl">Transaction rows shared</div><div class="val"><span class="ic">✔</span><span id="v-rows">0</span></div><div class="meta" id="m-rows">across all banks, all rounds</div></div>
+      <div class="tile hero good" id="t-rows"><div class="lbl">Transaction rows shared</div><div class="val"><span class="ic">✔</span><span id="v-rows">0</span></div><div class="meta" id="m-rows">across all banks, all rounds</div></div>
       <div class="tile"><div class="lbl">Model parameters shared</div><div class="val" id="v-params">—</div><div class="meta" id="m-params"></div></div>
       <div class="tile"><div class="lbl">Messages</div><div class="val" id="v-msgs">—</div><div class="meta" id="m-msgs"></div></div>
       <div class="tile" id="t-blocked"><div class="lbl">Blocked attempts</div><div class="val" id="v-blocked">—</div><div class="meta" id="m-blocked"></div></div>
-      <div class="tail" id="tail"><div class="l"><span class="t">waiting for the first egress line…</span></div></div>
     </div>
+    <div class="tailwrap"><div class="card-title">Live egress tail · last 10 lines</div>
+      <div class="tail" id="tail"><div class="l"><span class="t">waiting for the first egress line…</span></div></div></div>
   </section>
 
   <section class="panel" id="p-train">
     <h2>2 · Training — global model AUC per round <span class="note" id="train-note"></span></h2>
-    <div class="chartbox"><canvas id="aucChart"></canvas></div>
-    <div class="legendrow" id="auc-legend"></div>
-    <div id="train-table" style="margin-top:6px; max-height: 96px; overflow:auto;"></div>
+    <div class="card"><div class="chartbox"><canvas id="aucChart"></canvas></div>
+      <div class="legendrow" id="auc-legend"></div></div>
+    <div class="card" style="padding:10px"><div id="train-table" style="max-height: 150px; overflow:auto;"></div></div>
   </section>
 
   <section class="panel" id="p-priv">
-    <h2>3 · Privacy — <span style="text-transform:none; letter-spacing:0">ε</span>&nbsp;SPENT <span class="note">approximate, update-level Gaussian composition over rounds</span></h2>
+    <h2>3 · Privacy — ε spent <span class="note">approximate, update-level Gaussian composition over rounds</span></h2>
     <div id="priv-body" class="waiting">waiting for status.json</div>
   </section>
 
   <section class="panel" id="p-rogue">
     <h2>4 · Rogue bank — accepted / excluded per round <span class="note" id="rogue-note"></span></h2>
-    <div id="ap-wrap" style="display:none"><div class="chartbox" style="height:170px"><canvas id="apChart"></canvas></div>
-      <div id="ap-note" style="color:var(--muted); font-size:11px; margin:2px 0 8px"></div></div>
+    <div id="rogue-head"></div>
+    <div id="ap-wrap" style="display:none"><div class="card"><div class="chartbox" style="height:180px"><canvas id="apChart"></canvas></div>
+      <div id="ap-note" style="color:var(--ink-2); font-size:12px; margin:6px 0 0"></div></div></div>
     <div id="rogue-body" class="waiting">waiting for status.json</div>
   </section>
 
@@ -177,7 +280,7 @@
 
 </div>
 
-<footer class="panel wide" id="p-evidence" style="margin-top:12px">
+<footer class="panel wide" id="p-evidence">
   <h2>Evidence — where every number on this page comes from <span class="note" id="ev-note"></span></h2>
   <div id="ev-body" class="waiting">waiting for /api/state</div>
 </footer>
@@ -191,6 +294,7 @@ const f2 = x => (x == null || isNaN(x)) ? '—' : Number(x).toFixed(2);
 const kb = b => b == null ? '—' : (b < 1024 ? b + ' B' : (b / 1024).toFixed(1) + ' KB');
 const hhmmss = iso => { try { return new Date(iso).toLocaleTimeString('en-GB', {hour12:false, timeZone:'UTC'}); } catch (e) { return '—'; } };
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+if (typeof Chart !== 'undefined') { Chart.defaults.font.family = 'Geist, Arial, sans-serif'; Chart.defaults.font.size = 12; Chart.defaults.color = '#474744'; }
 
 function setPill(id, info, label) {
   const p = $(id); if (!p) return;
@@ -205,7 +309,7 @@ function renderRegulator(s) {
   const banks = Object.keys(pb).length;
   const rows = t.rows_shared || 0;
   $('v-rows').textContent = fmtInt(rows);
-  $('t-rows').className = 'tile ' + (rows === 0 ? 'good' : 'crit');
+  $('t-rows').className = 'tile hero ' + (rows === 0 ? 'good' : 'crit');
   $('m-rows').textContent = banks ? `${banks} bank${banks > 1 ? 's' : ''} audited · ${fmtInt(t.messages || 0)} updates inspected` : 'across all banks, all rounds';
   $('v-params').textContent = fmtInt(t.params_shared);
   $('m-params').textContent = t.bytes ? `${kb(t.bytes)} of clipped + noised weight deltas` : '';
@@ -228,7 +332,7 @@ function renderRegulator(s) {
       else if (kind === 'send_failed') body = `<span class="k">send_failed</span> bank ${esc(r.bank_id)} r${esc(r.round)} — ${esc(r.error || '')}`;
       else body = `<span class="k">${esc(kind)}</span> bank ${esc(r.bank_id)} r${esc(r.round)} · ${kb(r.bytes)} · params=${esc(r.params_shared)} rows=${esc(r.rows_shared)} · sha ${esc(String(r.sha256 || '').slice(0, 10))}`;
       const cls = kind === 'blocked' ? 'blocked' : (kind === 'send_failed' ? 'failed' : '');
-      return `<div class="l ${cls}"><span class="t">${hhmmss(r.ts)}</span> ${body}</div>`;
+      return `<div class="l ${cls}"><span class="t">${hhmmss(r.ts)}</span><span>${body}</span></div>`;
     }).join('');
   }
 }
@@ -239,7 +343,7 @@ const endLabel = {  // direct-label the last point of selected datasets
   id: 'endLabel',
   afterDatasetsDraw(chart) {
     const { ctx } = chart;
-    ctx.save(); ctx.font = '600 11px system-ui, sans-serif'; ctx.textBaseline = 'middle';
+    ctx.save(); ctx.font = '500 12px Geist, Arial, sans-serif'; ctx.textBaseline = 'middle';
     const used = [];   // y positions already labelled; skip a label that would overlap (tooltip + legend still carry it)
     chart.data.datasets.forEach((ds, i) => {
       if (!ds.endLabel) return;
@@ -357,20 +461,24 @@ function renderPrivacy(s) {
   const cls = frac >= 0.5 ? 'warn' : '';
   const stateTxt = !dp.enabled ? '<span class="tag bad">DP OFF — unprotected run</span>' : `<span class="tag ok">DP on · round ${esc(rDone)} of ${esc(rTotal)}</span>`;
   const scaleMax = planned ? planned : (budget || 1);
-  const tick = (budget && planned) ? `<div style="position:absolute; top:-3px; bottom:-3px; left:${Math.min(100, 100 * budget / scaleMax).toFixed(1)}%; width:2px; background:var(--ink-2)" title="policy budget ${budget}"></div>` : '';
+  const tick = (budget && planned) ? `<div style="position:absolute; top:-3px; bottom:-3px; left:${Math.min(100, 100 * budget / scaleMax).toFixed(1)}%; width:2px; background:var(--ink); border-radius:2px" title="policy budget ${budget}"></div>` : '';
   $('priv-body').className = '';
   $('priv-body').innerHTML = `
     <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap"><span class="big">ε spent ≈ ${eps == null ? '—' : f2(eps)}</span><span style="color:var(--ink-2)">(approximate)</span>${stateTxt}</div>
     <div class="meter"><div class="bar" style="position:relative"><div class="fill ${cls}" style="width:${(frac * 100).toFixed(1)}%"></div>${tick}</div>
       <div class="ticks"><span>0</span><span>${planned ? 'planned total for this run ≈ ' + f2(planned) + (plannedSrc.startsWith('dp.') ? '' : ' (projected)') : (dp.enabled ? 'planned total: waiting for round 1' : 'no noise in this run')}${budget ? ' · policy budget ' + budget + ' (dashboard override)' : ''}</span></div></div>
-    <dl class="kv">
-      <dt>Noise multiplier σ</dt><dd>${esc(dp.sigma ?? '—')} <span style="color:var(--muted)">(Gaussian std = σ · clip)</span></dd>
-      <dt>Clip norm (L2)</dt><dd>${esc(dp.clip_norm ?? '—')} <span style="color:var(--muted)">per update, applied inside the bank</span></dd>
-      <dt>δ</dt><dd>${esc(dp.delta ?? '—')}</dd>
+    <div class="strip">
+      <div class="cell"><div class="k">Noise multiplier σ</div><div class="v">${esc(dp.sigma ?? '—')}</div><div class="m">(Gaussian std = σ · clip)</div></div>
+      <div class="cell"><div class="k">Clip norm (L2)</div><div class="v">${esc(dp.clip_norm ?? '—')}</div><div class="m">per update, applied inside the bank</div></div>
+      <div class="cell"><div class="k">δ</div><div class="v">${esc(dp.delta ?? '—')}</div></div>
+      <div class="cell"><div class="k">ε spent ≈</div><div class="v">${eps == null ? '—' : f2(eps)}</div><div class="m">approximate</div></div>
+      <div class="cell"><div class="k">Planned ε ≈</div><div class="v">${planned ? f2(planned) : '—'}</div><div class="m">${planned ? (plannedSrc.startsWith('dp.') ? 'planned total for this run' : 'projected') : ''}</div></div>
+    </div>
+    <dl class="kv" style="margin-top:14px">
       <dt>Rounds composed</dt><dd>${esc(st.round ?? '—')} of ${esc(st.total_rounds ?? '—')}</dd>
       ${dp.enabled ? `<dt>DP mode</dt><dd>${isLocalDP(dp) ? 'local · noise added inside each bank, before egress' : 'central · noise added by the coordinator'}</dd>` : ''}
     </dl>
-    <p style="color:var(--muted); font-size:12px; margin:10px 0 0">${!dp.enabled
+    <p style="color:var(--ink-2); font-size:12.5px; margin:12px 0 0">${!dp.enabled
       ? 'This run has DP off: updates are clipped but not noised, so no ε is spent. It is the unprotected comparison for the red team.'
       : (isLocalDP(dp)
           ? 'Each bank clips its weight delta to the L2 norm above and adds the Gaussian noise before the update leaves; the coordinator never sees an un-noised update.'
@@ -418,7 +526,7 @@ function renderRogue(s) {
   const hasEx = x => x && Array.isArray(x.rounds) && x.rounds.some(r => (r.excluded || []).length);
   if (!hasEx(st) && hasEx(s.status_rogue_on)) { st = s.status_rogue_on; src = 'status_rogue_on.json'; }
   const rounds = (st && Array.isArray(st.rounds)) ? st.rounds : [];
-  if (!rounds.length) { $('rogue-body').className = 'waiting'; $('rogue-body').textContent = 'waiting for completed rounds'; return; }
+  if (!rounds.length) { $('rogue-head').innerHTML = ''; $('rogue-body').className = 'waiting'; $('rogue-body').textContent = 'waiting for completed rounds'; return; }
   const rogues = rogueSet(st);
   const exCount = {}; rounds.forEach(r => (r.excluded || []).forEach(e => { exCount[e.bank_id] = (exCount[e.bank_id] || 0) + 1; }));
   const summary = Object.entries(exCount).map(([b, c]) => `${rogues.has(String(b)) ? 'rogue ' : 'honest '}bank ${b} excluded in ${c}/${rounds.length} rounds`).join(' · ') || 'no exclusions so far';
@@ -430,21 +538,21 @@ function renderRogue(s) {
   const rg = [...rogues][0];
   if (last(off) && last(on)) {
     // MASTER 16:12: AP collapse is the visible damage; show AUC and AP side by side
-    const row = (name, x, cls) => { const l = last(x); return `<tr><td>${name}</td><td class="num">${f3(l.global_auc)}</td><td class="num"><b>${f3(l.global_ap)}</b></td><td class="num">${exN(x, rg)}/${nR(x)}</td><td style="padding-left:14px">${cls}</td></tr>`; };
-    cmp = `<table style="margin:2px 0 10px; max-width:760px"><tr><th>final round, rogue bank ${esc(rg)} present</th><th class="num">AUC</th><th class="num">AP (precision on rare laundering)</th><th class="num">bank ${esc(rg)} excluded</th><th></th></tr>`
-      + row('defense off', off, '<span class="tag bad">poisoned update averaged in</span>')
-      + row('defense on', on, '<span class="tag ok">✔ rogue screened out</span>') + '</table>';
+    const kcard = (name, x, chip) => { const l = last(x); return `<div class="tile"><div class="lbl">${name}</div><div class="val">${f3(l.global_ap)}</div><div class="unit">AP (precision on rare laundering)</div><div class="meta">AUC ${f3(l.global_auc)} · bank ${esc(rg)} excluded ${exN(x, rg)}/${nR(x)}</div><div style="margin-top:8px">${chip}</div></div>`; };
+    cmp = `<div class="small" style="margin-top:14px">final round, rogue bank ${esc(rg)} present</div><div class="kpis2" style="margin-top:6px">`
+      + kcard('defense off', off, '<span class="tag bad">✖ poisoned update averaged in</span>')
+      + kcard('defense on', on, '<span class="tag ok">✔ rogue screened out</span>') + '</div>';
   }
   const dpTxt = st.dp ? (st.dp.enabled ? ` · DP on (σ ${st.dp.sigma})` : ' · defense evaluated with DP off') : '';
   $('rogue-note').textContent = src + (st.banks_expected ? ` · expected banks ${st.banks_expected.join(',')}` : '') + dpTxt;
   $('rogue-body').className = '';
-  $('rogue-body').innerHTML = `${cmp}<div style="margin-bottom:6px">${esc(summary)}</div>
-    <div style="max-height:150px; overflow:auto"><table><tr><th>round</th><th>accepted</th><th>excluded</th><th>reason</th><th class="num">score</th></tr>` +
+  $('rogue-head').innerHTML = `<div class="card entity"><span class="e-lbl">Rogue participant · synthetic attack</span><span class="e-id">bank ${esc(rg)}</span><span class="e-st">${esc(summary)}</span></div>${cmp}`;
+  $('rogue-body').innerHTML = `<div class="card" style="padding:10px; margin-top:14px"><div style="max-height:150px; overflow:auto"><table><tr><th>round</th><th>accepted</th><th>excluded</th><th>reason</th><th class="num">score</th></tr>` +
     rounds.slice().reverse().map(r => {
       const ex = r.excluded || [];
       if (!ex.length) return `<tr><td>${esc(r.round)}</td><td>${esc((r.accepted || []).join(', '))}</td><td><span class="tag ok">none</span></td><td></td><td></td></tr>`;
       return ex.map((e, i) => `<tr class="ex"><td>${i ? '' : esc(r.round)}</td><td>${i ? '' : esc((r.accepted || []).join(', '))}</td><td>${rogues.has(String(e.bank_id)) ? `<span class="tag bad">✖ bank ${esc(e.bank_id)} · rogue</span>` : `<span class="tag warn">▲ bank ${esc(e.bank_id)} · honest</span>`}</td><td>${esc(e.reason || '')}</td><td class="num">${f3(e.score)}</td></tr>`).join('');
-    }).join('') + '</table></div>';
+    }).join('') + '</table></div></div>';
 }
 
 /* ---------- 5. red team ---------- */
@@ -473,39 +581,39 @@ function renderRedteam(s) {
     ? `${other} rows (${other === 'all' ? 'control, 1-in-1000 base rate' : 'secondary'}): DP off acc ${f3(oOff && oOff.attack_acc)} / AUC ${f3(oOff && oOff.attack_auc)} · DP on acc ${f3(oOn && oOn.attack_acc)} / AUC ${f3(oOn && oOn.attack_auc)}`
     : `${other} rows: not recorded in redteam.json`;
   $('red-body').className = '';
-  $('red-body').innerHTML = `<table><tr><th>attack: ${esc(rt.attack || '?')} · target: <b>${esc(target)} rows</b>${rt.members ? ' · members: ' + esc(rt.members) : ''}</th><th class="num">DP off</th><th class="num">DP on</th></tr>
+  $('red-body').innerHTML = `<div class="card" style="padding:10px"><table><tr><th>attack: ${esc(rt.attack || '?')} · target: <b>${esc(target)} rows</b>${rt.members ? ' · members: ' + esc(rt.members) : ''}</th><th class="num">DP off</th><th class="num">DP on</th></tr>
     ${row('attack accuracy (0.5 = chance)', accOff, accOn, f3)}
     ${row('attack AUC', off.attack_auc, on.attack_auc, f3)}
     ${row('rows attacked per class', off.n, on.n, fmtInt)}
-    ${row('model AUC (utility cost)', rt.model_auc_off, rt.model_auc_on, f3)}</table>
-    <div style="color:var(--muted); font-size:11px; margin-top:4px">${esc(foot)}</div>
+    ${row('model AUC (utility cost)', rt.model_auc_off, rt.model_auc_on, f3)}</table></div>
+    <div style="color:var(--ink-2); font-size:12px; margin-top:10px">${esc(foot)}</div>
     <div class="verdict ${vcls}">${esc(vtxt)}</div>`;
 }
 
 /* dot-and-whisker: attack AUC with 90% CI per setting; x 0.45–1.0; dashed coin-flip line at 0.5 */
 function auditChart(entries, isCurrent) {
-  const W = 860, rowH = 30, top = 24, left = 92, right = 250, xMin = 0.45, xMax = 1.0;
+  const W = 720, rowH = 32, top = 24, left = 84, right = 214, xMin = 0.45, xMax = 1.0;
   const H = top + entries.length * rowH + 22;
   const x = v => left + (Math.max(xMin, Math.min(xMax, v)) - xMin) / (xMax - xMin) * (W - left - right);
   const col = v => { const u = String(v || '').toUpperCase(); return u === 'PROTECTED' ? css('--s3') : css('--crit'); };
   const ticks = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
   let g = ticks.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="${top - 6}" y2="${H - 22}" stroke="${css('--grid')}" stroke-width="1"/>
-    <text x="${x(t)}" y="${H - 8}" fill="${css('--muted')}" font-size="11" text-anchor="middle">${t.toFixed(1)}</text>`).join('');
+    <text x="${x(t)}" y="${H - 8}" fill="${css('--muted')}" font-size="12" text-anchor="middle" font-family="Geist Mono, monospace">${t.toFixed(1)}</text>`).join('');
   g += `<line x1="${x(0.5)}" x2="${x(0.5)}" y1="${top - 10}" y2="${H - 22}" stroke="${css('--ink-2')}" stroke-width="1.5" stroke-dasharray="4 4"/>
-    <text x="${x(0.5) + 4}" y="${top - 12}" fill="${css('--ink-2')}" font-size="11">coin flip 0.5</text>
-    <text x="${W - right}" y="${top - 12}" fill="${css('--muted')}" font-size="11" text-anchor="end">attack AUC · 90% CI →</text>`;
+    <text x="${x(0.5) + 4}" y="${top - 12}" fill="${css('--ink-2')}" font-size="12">coin flip 0.5</text>
+    <text x="${W - right}" y="${top - 12}" fill="${css('--muted')}" font-size="12" text-anchor="end">attack AUC · 90% CI →</text>`;
   entries.forEach(([k, r], i) => {
     const y = top + i * rowH + rowH / 2; const c = col(r.verdict);
     const ci = Array.isArray(r.attack_auc_ci90) ? r.attack_auc_ci90 : [r.attack_auc, r.attack_auc];
     if (isCurrent(k, r)) g += `<rect x="2" y="${y - rowH / 2 + 2}" width="${W - 4}" height="${rowH - 4}" rx="5" fill="none" stroke="${css('--s1')}" stroke-width="1.5"/>`;
-    g += `<text x="10" y="${y + 4}" fill="${css('--ink')}" font-size="12">${esc(k)}</text>
+    g += `<text x="10" y="${y + 4}" fill="${css('--ink')}" font-size="13">${esc(k)}</text>
       <line x1="${x(ci[0])}" x2="${x(ci[1])}" y1="${y}" y2="${y}" stroke="${c}" stroke-width="2"/>
       <line x1="${x(ci[0])}" x2="${x(ci[0])}" y1="${y - 5}" y2="${y + 5}" stroke="${c}" stroke-width="2"/>
       <line x1="${x(ci[1])}" x2="${x(ci[1])}" y1="${y - 5}" y2="${y + 5}" stroke="${c}" stroke-width="2"/>
       <circle cx="${x(r.attack_auc)}" cy="${y}" r="5.5" fill="${c}" stroke="${css('--surface')}" stroke-width="2"/>
-      <text x="${W - right + 12}" y="${y + 4}" fill="${css('--ink-2')}" font-size="12">${f3(r.attack_auc)} · ${esc(String(r.verdict || '').toUpperCase())}${isCurrent(k, r) ? ' · this run' : ''}</text>`;
+      <text x="${W - right + 12}" y="${y + 4}" fill="${css('--ink-2')}" font-size="12.5">${f3(r.attack_auc)} · ${esc(String(r.verdict || '').toUpperCase())}${isCurrent(k, r) ? ' · this run' : ''}</text>`;
   });
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px; display:block; margin:2px 0 8px" role="img" aria-label="attack AUC with 90% confidence interval per DP setting">${g}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px; display:block; margin:2px 0 0; font-family:Geist, Arial, sans-serif" role="img" aria-label="attack AUC with 90% confidence interval per DP setting">${g}</svg>`;
 }
 
 /* DP auditing game (REDTEAM): rows = {setting: {sigma, attack_acc, attack_auc, attack_auc_ci90, eps_empirical_lower_95, eps_accountant_1round, verdict, n_scored}} */
@@ -542,12 +650,12 @@ function renderAudit(s, rt) {
     ? `Footnote: row-level membership attack${rl.attack ? ' (' + esc(rl.attack) + ')' : ''} on the final model (${esc(rl.target || 'laundering')} rows): DP off acc ${f3(rl.dp_off.attack_acc)} / AUC ${f3(rl.dp_off.attack_auc)} · DP on acc ${f3(rl.dp_on.attack_acc)} / AUC ${f3(rl.dp_on.attack_auc)}.`
     : '';
   $('red-body').className = '';
-  $('red-body').innerHTML = `<div style="font-size:11px; color:var(--ink-2); margin-bottom:4px">attack: <b>${esc(rt.attack || 'canary_update')}</b>${rt.bank != null ? ' · bank ' + esc(rt.bank) : ''}${rt.target_row ? ' · canary: ' + esc(rt.target_row) : ''}${rt.target && typeof rt.target === 'string' && rt.target.length > 20 ? ' · target: ' + esc(rt.target) : ''}${rt.dp_on_mode ? ' · DP mode: ' + esc(rt.dp_on_mode) : ''}</div>
-    ${auditChart(entries, isCurrent)}
-    <table><tr><th>setting</th><th class="num">σ</th><th class="num">attack AUC</th><th class="num">90% CI</th><th class="num">ε lower bound (measured)</th><th class="num">ε accountant (1 round)</th><th style="padding-left:14px">verdict</th></tr>` +
-    entries.map(([k, r]) => `<tr${isCurrent(k, r) ? ' style="outline:1px solid var(--s1)"' : ''}><td>${esc(k)}</td><td class="num">${esc(r.sigma ?? '—')}</td><td class="num">${f3(r.attack_auc)}</td><td class="num">${ci(r)}</td><td class="num">${r.eps_empirical_lower_95 == null ? '—' : f2(r.eps_empirical_lower_95)}</td><td class="num">${r.eps_accountant_1round == null ? '—' : f2(r.eps_accountant_1round)}</td><td style="padding-left:14px">${vtag(r.verdict)}</td></tr>`).join('') +
-    `</table>
-    <div style="color:var(--muted); font-size:11px; margin-top:4px">Synthetic attack by our own team: the attacker sees one bank's update with and without a planted laundering row and guesses which. 0.5 = chance.${(rt.current_setting || runSigma != null) ? ' Outlined row = setting of the current run' + (rt.current_setting ? ' (' + esc(rt.current_setting) + ')' : '') + '.' : ''}${typeof rt.model_auc_off === 'number' && typeof rt.model_auc_on === 'number' ? ` Utility cost: model AUC ${f3(rt.model_auc_off)} without DP → ${f3(rt.model_auc_on)} with DP.` : ''} ${esc(foot)}</div>
+  $('red-body').innerHTML = `<div class="card"><div style="font-size:12.5px; color:var(--ink-2); margin-bottom:6px">attack: <b>${esc(rt.attack || 'canary_update')}</b>${rt.bank != null ? ' · bank ' + esc(rt.bank) : ''}${rt.target_row ? ' · canary: ' + esc(rt.target_row) : ''}${rt.target && typeof rt.target === 'string' && rt.target.length > 20 ? ' · target: ' + esc(rt.target) : ''}${rt.dp_on_mode ? ' · DP mode: ' + esc(rt.dp_on_mode) : ''}</div>
+    ${auditChart(entries, isCurrent)}</div>
+    <div class="card" style="padding:10px"><table><tr><th>setting</th><th class="num">σ</th><th class="num">attack AUC</th><th class="num">90% CI</th><th class="num">ε lower bound (measured)</th><th class="num">ε accountant (1 round)</th><th style="padding-left:14px">verdict</th></tr>` +
+    entries.map(([k, r]) => `<tr${isCurrent(k, r) ? ' style="outline:2px solid var(--s1); outline-offset:-2px"' : ''}><td>${esc(k)}</td><td class="num">${esc(r.sigma ?? '—')}</td><td class="num">${f3(r.attack_auc)}</td><td class="num">${ci(r)}</td><td class="num">${r.eps_empirical_lower_95 == null ? '—' : f2(r.eps_empirical_lower_95)}</td><td class="num">${r.eps_accountant_1round == null ? '—' : f2(r.eps_accountant_1round)}</td><td style="padding-left:14px">${vtag(r.verdict)}</td></tr>`).join('') +
+    `</table></div>
+    <div style="color:var(--ink-2); font-size:12px; margin-top:10px">Synthetic attack by our own team: the attacker sees one bank's update with and without a planted laundering row and guesses which. 0.5 = chance.${(rt.current_setting || runSigma != null) ? ' Outlined row = setting of the current run' + (rt.current_setting ? ' (' + esc(rt.current_setting) + ')' : '') + '.' : ''}${typeof rt.model_auc_off === 'number' && typeof rt.model_auc_on === 'number' ? ` Utility cost: model AUC ${f3(rt.model_auc_off)} without DP → ${f3(rt.model_auc_on)} with DP.` : ''} ${esc(foot)}</div>
     <div class="verdict ${vcls}">${esc(vtxt)}</div>`;
 }
 
@@ -558,13 +666,14 @@ function renderFootprint(s) {
   const rss = fp.per_container_peak_rss_mb || {}; const max = Math.max(1, ...Object.values(rss).map(Number));
   const total = Object.values(rss).reduce((a, b) => a + Number(b || 0), 0);
   $('foot-body').className = '';
-  $('foot-body').innerHTML = `<div class="foot"><div><table><tr><th>container</th><th>peak RSS</th></tr>` +
-    Object.entries(rss).sort((a, b) => Number(b[1]) - Number(a[1])).map(([c, v]) => `<tr><td>${esc(c)}</td><td><span class="hbar" style="width:${(120 * Number(v) / max).toFixed(0)}px"></span>${fmtInt(Math.round(v))} MB</td></tr>`).join('') +
-    `</table></div><dl class="kv">
-      <dt>Seconds per round</dt><dd class="big" style="font-size:22px">${fp.seconds_per_round == null ? '—' : f2(fp.seconds_per_round)} s</dd>
-      <dt>Total runtime</dt><dd>${fp.total_runtime_s == null ? '—' : fmtInt(Math.round(fp.total_runtime_s)) + ' s'}</dd>
-      <dt>Sum of container peaks</dt><dd>${fmtInt(Math.round(total))} MB of 8 192 MB</dd>
-      <dt>Machine</dt><dd>${esc(fp.arch || '?')} · ${esc(fp.cpu_count ?? '?')} cores · IBM LinuxONE Community Cloud</dd></dl></div>`;
+  $('foot-body').innerHTML = `<div class="foot"><div class="strip">
+      <div class="cell"><div class="k">Seconds per round</div><div class="v">${fp.seconds_per_round == null ? '—' : f2(fp.seconds_per_round)} s</div></div>
+      <div class="cell"><div class="k">Total runtime</div><div class="v">${fp.total_runtime_s == null ? '—' : fmtInt(Math.round(fp.total_runtime_s)) + ' s'}</div></div>
+      <div class="cell"><div class="k">Sum of container peaks</div><div class="v">${fmtInt(Math.round(total))} MB</div><div class="m">of 8 192 MB</div></div>
+      <div class="cell" style="flex:2"><div class="k">Machine</div><div class="v" style="font-size:20px; white-space:normal">${esc(fp.arch || '?')} · ${esc(fp.cpu_count ?? '?')} cores</div><div class="m">IBM LinuxONE Community Cloud</div></div></div>
+    <div class="card" style="padding:10px"><table><tr><th>container</th><th>peak RSS</th></tr>` +
+    Object.entries(rss).sort((a, b) => Number(b[1]) - Number(a[1])).map(([c, v]) => `<tr><td class="mono">${esc(c)}</td><td><span class="hbar" style="width:${(360 * Number(v) / max).toFixed(0)}px"></span><span class="mono">${fmtInt(Math.round(v))} MB</span></td></tr>`).join('') +
+    `</table></div></div>`;
 }
 
 /* ---------- 7. alert queue + SAR ---------- */
@@ -617,21 +726,25 @@ function renderAlerts(s) {
   const k = rows.length, lab = rows.filter(r => r.is_laundering === 1).length;
   const prec = k ? lab / k : 0; const lift = (meta.prevalence > 0 && lab) ? prec / meta.prevalence : null;
   const amt = r => r.amt_paid == null ? '—' : Number(r.amt_paid).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const tag = r => r.is_laundering === 1 ? '<span class="tag warn" title="labelled laundering in the synthetic data">▲ labelled laundering</span>' : '<span style="color:var(--muted)">not labelled</span>';
+  const tag = r => r.is_laundering === 1 ? '<span class="tag warn" title="labelled laundering in the synthetic data">▲ labelled laundering</span>' : '<span class="tag muted">not labelled</span>';
   const fresh = !$('aq-table');
   if (fresh) {
     $('alerts-body').className = '';
     $('alerts-body').innerHTML = `<div id="aq-meta" style="font-size:12px; color:var(--ink-2); margin-bottom:6px"></div>
-      <div class="aq"><div class="queue"><table id="aq-table"></table></div>
-      <div><div class="provenance"><span><span class="sw" style="background:var(--s7)"></span>paragraph written by the LLM</span><span><span class="sw" style="background:var(--surface-2); border:1px solid var(--border)"></span>everything else inserted by code from alerts.json</span><span id="sar-file" style="color:var(--muted)"></span></div>
+      <div class="aq"><div class="card queue"><table id="aq-table"></table></div>
+      <div><div class="card" id="aq-entity"></div><div class="provenance"><span><span class="sw" style="background:var(--s7)"></span>paragraph written by the LLM</span><span><span class="sw" style="background:var(--surface-2); border:1px solid var(--border)"></span>everything else inserted by code from alerts.json</span><span id="sar-file" style="color:var(--muted)"></span></div>
       <div class="sar" id="sar-box"><div class="waiting">loading report…</div></div></div></div>`;
   }
   $('aq-meta').innerHTML = `<b>${lab} of top ${k} labelled laundering</b>${lift ? `, ≈${Math.round(lift)}× the base rate (${(meta.prevalence * 100).toFixed(3)}% of ${fmtInt(meta.n_scored)} scored)` : ''}; ${esc(meta.wording || 'ranked for analyst review, not a finding')}.`
     + (meta.ablation_note ? `<div style="color:var(--muted); font-size:11px; margin-top:3px">Disclosure: ${esc(meta.ablation_note)}</div>` : '');
   $('aq-table').innerHTML = `<tr><th>rank</th><th>alert</th><th class="num">score</th><th class="num">banks</th><th class="num">trigger amount</th><th>cur</th><th>synthetic-data label</th><th>report</th></tr>` +
-    rows.map(r => `<tr class="pick${r.alert_id === selAlert ? ' sel' : ''}" data-id="${esc(r.alert_id)}"><td>${esc(r.rank ?? '—')}</td><td>${esc(r.alert_id)}</td><td class="num">${r.score == null ? '—' : Number(r.score).toFixed(6)}</td><td class="num" title="${esc((r.banks_involved || []).join(', '))}">${esc(r.n_banks)}</td><td class="num">${amt(r)}</td><td class="cur">${esc(r.cur_paid || '')}</td><td>${tag(r)}</td><td>${r.has_sar ? '<span class="tag ok">report</span>' : '<span style="color:var(--muted)" title="no report generated">no report</span>'}</td></tr>`).join('');
+    rows.map(r => `<tr class="pick${r.alert_id === selAlert ? ' sel' : ''}" data-id="${esc(r.alert_id)}"><td>${esc(r.rank ?? '—')}</td><td class="aid">${esc(r.alert_id)}</td><td class="num">${r.score == null ? '—' : Number(r.score).toFixed(6)}</td><td class="num" title="${esc((r.banks_involved || []).join(', '))}">${esc(r.n_banks)}</td><td class="num">${amt(r)}</td><td class="cur">${esc(r.cur_paid || '')}</td><td>${tag(r)}</td><td>${r.has_sar ? '<span class="tag ok">report</span>' : '<span class="tag muted" title="no report generated">no report</span>'}</td></tr>`).join('');
   $('aq-table').querySelectorAll('tr.pick').forEach(tr => tr.onclick = () => pickAlert(tr.dataset.id));
   const cur = rows.find(r => r.alert_id === selAlert);
+  if (cur) $('aq-entity').innerHTML = `<div class="entity"><span class="e-lbl">AML alert · ranked for analyst review</span><span class="e-id">${esc(cur.alert_id)}</span>
+    <span class="e-st">rank ${esc(cur.rank ?? '—')} · score ${cur.score == null ? '—' : Number(cur.score).toFixed(6)} · ${esc(cur.n_banks)} bank${cur.n_banks === 1 ? '' : 's'}${(cur.banks_involved || []).length ? ' (' + esc(cur.banks_involved.join(', ')) + ')' : ''}</span>
+    <span class="e-name">${amt(cur)} <span style="font-size:18px; color:var(--ink-2); letter-spacing:0">${esc(cur.cur_paid || '')} · trigger amount</span></span>
+    <div class="e-row">${tag(cur)}${cur.has_sar ? '<span class="tag ok">report</span>' : '<span class="tag muted">no report</span>'}</div></div>`;
   showSar(cur && cur.has_sar ? cur.alert_id : null);
 }
 
@@ -657,8 +770,17 @@ function renderEvidence(s) {
   ];
   $('ev-note').textContent = `served from ${location.host} · state=${s.state_dir || 'state'} logs=${s.logs_dir || 'logs/egress'} · page time ${hhmmss(s.now)} UTC`;
   $('ev-body').className = '';
-  $('ev-body').innerHTML = `<table style="font-size:11px"><tr><th>panel</th><th>file (on the VM)</th><th>keys used</th><th>file written</th></tr>` +
-    rows.map(r => `<tr><td>${esc(r[0])}</td><td style="font-family:ui-monospace,Menlo,monospace">${esc(r[1])}</td><td>${esc(r[2])}</td><td>${esc(r[3])}</td></tr>`).join('') + '</table>';
+  $('ev-body').innerHTML = `<table class="plain"><tr><th>panel</th><th>file (on the VM)</th><th>keys used</th><th>file written</th></tr>` +
+    rows.map(r => `<tr><td>${esc(r[0])}</td><td class="mono" style="font-size:12px">${esc(r[1])}</td><td>${esc(r[2])}</td><td>${esc(r[3])}</td></tr>`).join('') + '</table>';
+}
+
+/* run tag in the top bar: DP on/off · σ · mode, from status.json */
+function renderRunPill(s) {
+  const p = $('pill-run'); if (!p) return;
+  const dp = s.status && s.status.dp;
+  if (!dp) { p.className = 'btn-pill filled'; p.textContent = 'run: waiting for status.json'; return; }
+  p.className = 'btn-pill filled' + (dp.enabled ? '' : ' dpoff');
+  p.textContent = dp.enabled ? `DP on · σ ${dp.sigma ?? '?'} · ${isLocalDP(dp) ? 'local' : 'central'}` : 'DP off · unprotected run';
 }
 
 /* ---------- loop ---------- */
@@ -674,13 +796,14 @@ async function tick() {
     setPill('pill-baselines', f['baselines.json'], 'baselines.json');
     setPill('pill-redteam', f['redteam.json'], 'redteam.json');
     setPill('pill-footprint', f['footprint.json'], 'footprint.json');
-    $('pill-live').className = 'pill on live'; $('pill-live').innerHTML = '<span class="dot"></span>live · ' + hhmmss(s.now) + ' UTC';
+    $('pill-live').className = 'btn-pill outline live'; $('pill-live').innerHTML = '<span class="dot"></span>live · ' + hhmmss(s.now) + ' UTC';
+    renderRunPill(s);
     $('banner').style.display = (s.status && s.status.synthetic_sample) ? 'block' : 'none';
     lastState = s;
     renderRegulator(s); renderTraining(s); renderPrivacy(s); renderRogue(s); renderRedteam(s); renderFootprint(s); renderAlerts(s); renderEvidence(s);
   } catch (e) {
     failures++;
-    $('pill-live').className = 'pill offline'; $('pill-live').innerHTML = '<span class="dot"></span>offline · ' + esc(e.message);
+    $('pill-live').className = 'btn-pill outline offline'; $('pill-live').innerHTML = '<span class="dot"></span>offline · ' + esc(e.message);
   }
 }
 const soloId = new URLSearchParams(location.search).get('solo');   // ?solo=p-train renders one panel full width (screenshots)
