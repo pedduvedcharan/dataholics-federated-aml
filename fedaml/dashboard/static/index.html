@@ -368,9 +368,8 @@ const endLabel = {  // direct-label the last point of selected datasets
       const meta = chart.getDatasetMeta(i); if (!meta.data.length || meta.hidden) return;
       const pt = meta.data[meta.data.length - 1]; const y = pt.y + (ds.endOffset || 0);
       if (used.some(u => Math.abs(u - y) < 13)) return;
-      used.push(y);   // colored swatch dot keeps the pairing with the line; the text itself is Gray 100 for contrast
-      ctx.fillStyle = ds.borderColor; ctx.beginPath(); ctx.arc(pt.x + 10, y, 3.5, 0, 2 * Math.PI); ctx.fill();
-      ctx.fillStyle = css('--ink'); ctx.fillText(ds.endLabel, pt.x + 17, y);
+      used.push(y);   // Gray 100 text for contrast; the line's own colored last point is the swatch
+      ctx.fillStyle = css('--ink'); ctx.fillText(ds.endLabel, pt.x + 8, y);
     });
     ctx.restore();
   }
@@ -449,7 +448,7 @@ function renderTraining(s) {
   if (typeof Chart === 'undefined') { $('aucChart').parentElement.innerHTML = '<div class="waiting">Chart.js not loaded (no CDN access) — see table below</div>'; }
   else if (!aucChart) {
     aucChart = new Chart($('aucChart'), { type: 'line', data: { labels: xs, datasets }, plugins: [endLabel], options: {
-      animation: false, responsive: true, maintainAspectRatio: false, layout: { padding: { right: 74 } },
+      animation: false, responsive: true, maintainAspectRatio: false, layout: { padding: { right: 66 } },
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${f3(c.parsed.y)}` } } },
       scales: { x: { grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') } },
@@ -526,7 +525,7 @@ function renderApChart(s) {
   const ymax = Math.max(0.05, ...dOff.concat(dOn).filter(v => v != null)) * 1.15;
   if (!apChart) {
     apChart = new Chart($('apChart'), { type: 'line', data: { labels, datasets }, plugins: [endLabel], options: {
-      animation: false, responsive: true, maintainAspectRatio: false, layout: { padding: { right: 80 } },
+      animation: false, responsive: true, maintainAspectRatio: false, layout: { padding: { right: 72 } },
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { display: true, position: 'top', align: 'start', labels: { color: css('--ink-2'), boxWidth: 14, boxHeight: 2, font: { size: 11 } } },
                  tooltip: { callbacks: { label: c => `${c.dataset.label}: AP ${f3(c.parsed.y)}` } } },
