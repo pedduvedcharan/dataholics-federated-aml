@@ -109,6 +109,13 @@ def gather_chain(df: pd.DataFrame, idx: int, max_rows: int = 10) -> tuple[list[d
     return out, n_s, n_r
 
 
+def sender_other_receivers(df: pd.DataFrame, idx) -> int:
+    """Distinct receivers of the sender's OTHER payments in the full frame, excluding the trigger's receiver."""
+    trig = df.loc[idx]
+    other = df[(df["from_acct"].astype(str) == str(trig["from_acct"])) & (df.index != idx)]
+    return int(other["to_acct"].astype(str).loc[lambda x: x != str(trig["to_acct"])].nunique())
+
+
 def top_features(x: np.ndarray, coef: np.ndarray, names: list[str], k: int = 5) -> list[dict]:
     """Top-k features by |value * coefficient| for one row."""
     contrib = x * coef
@@ -153,7 +160,8 @@ def institutions(rows: list[dict], banks: list[str], labels: dict[str, str]) -> 
 
 
 def _alert(rank: int, pos: int, idx, p: np.ndarray, X: np.ndarray, coef: np.ndarray, names: list[str],
-           model: dict, rows: list[dict], n_s: int, n_r: int, banks: list[str], labels: dict[str, str]) -> dict:
+           model: dict, rows: list[dict], n_s: int, n_r: int, banks: list[str], labels: dict[str, str],
+           n_rcv: int | None = None) -> dict:
     accounts = sorted({str(r["from_acct"]) for r in rows} | {str(r["to_acct"]) for r in rows})
     return {
         "alert_id": f"A{rank:02d}",
@@ -171,6 +179,7 @@ def _alert(rank: int, pos: int, idx, p: np.ndarray, X: np.ndarray, coef: np.ndar
             "n_rows": len(rows),
             "total_amt_paid": round(float(sum(r.get("amt_paid") or 0.0 for r in rows)), 2),
             "sender_other_txns": int(n_s),
+            "sender_other_receivers": None if n_rcv is None else int(n_rcv),
             "receiver_onward_txns": int(n_r),
             "n_banks": len(banks),
             "laundering_rows": int(sum(int(r.get("is_laundering") or 0) for r in rows)),
@@ -213,7 +222,8 @@ def build_alerts(df: pd.DataFrame, model: dict, top: int = 20, max_rows: int = 1
             continue
         kept.append((int(pos), rows, n_s, n_r, banks))
 
-    alerts = [_alert(rank, pos, df.index[pos], p, X, coef, names, model, rows, n_s, n_r, banks, labels)
+    alerts = [_alert(rank, pos, df.index[pos], p, X, coef, names, model, rows, n_s, n_r, banks, labels,
+                     sender_other_receivers(df, df.index[pos]))
               for rank, (pos, rows, n_s, n_r, banks) in enumerate(kept[:top], start=1)]
 
     def prec(positions: list[int]) -> dict:

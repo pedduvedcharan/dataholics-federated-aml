@@ -80,7 +80,7 @@ def sar_alert(b: int, rank: int, pos: int, df: pd.DataFrame, s: dict, model: dic
     rows, n_s, n_r = A.gather_chain(df, idx, 10)
     banks = sorted({str(x["from_bank"]) for x in rows} | {str(x["to_bank"]) for x in rows}, key=A._bank_key)
     a = A._alert(rank, pos, idx, s["p"], s["X"], s["coef"], list(model["feature_names"]), model,
-                 rows, n_s, n_r, banks, labels)
+                 rows, n_s, n_r, banks, labels, A.sender_other_receivers(df, idx))
     a["alert_id"] = f"B{b}-A{rank:02d}"
     a["sample_desc"] = f"bank {b}'s own test-period records"
     a["scope_note"] = (f"Scored inside bank {b} on its own records with the shared model; no other bank's rows "

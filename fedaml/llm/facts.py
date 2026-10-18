@@ -65,7 +65,9 @@ def extract_facts(alert: dict, model: dict | None = None) -> dict[str, str]:
     ts = sorted(str(r["ts"]) for r in rows if r.get("ts"))
     cs = alert.get("chain_summary", {})
     n_s, n_r = int(cs.get("sender_other_txns", 0)), int(cs.get("receiver_onward_txns", 0))
-    n_rcv = len(receivers - {str(trig["to_acct"])})
+    n_rcv = cs.get("sender_other_receivers")
+    if n_rcv is None:  # older alerts: count from the displayed chain rows only
+        n_rcv = len(receivers - {str(trig["to_acct"])})
     sender_activity = ("made no other payments in the review sample" if n_s == 0 else
                        f"made {n_s} other payment{'s' * (n_s != 1)} to {n_rcv or 1} other receiver{'s' * (n_rcv != 1)}")
     receiver_activity = ("has not moved the funds onward in the review sample" if n_r == 0 else
@@ -89,7 +91,7 @@ def extract_facts(alert: dict, model: dict | None = None) -> dict[str, str]:
         "TOTAL_AMT": _fmt_amt(cs.get("total_amt_paid")),
         "N_SENDER_OTHER": str(cs.get("sender_other_txns", 0)),
         "N_RECEIVER_ONWARD": str(cs.get("receiver_onward_txns", 0)),
-        "N_DISTINCT_RECEIVERS": str(len(receivers)),
+        "N_DISTINCT_RECEIVERS": str(n_rcv + 1),  # the sender's other receivers plus the trigger's receiver
         "BANKS": ", ".join(str(b) for b in alert.get("banks_involved", [])),
         "N_BANKS": str(cs.get("n_banks", len(alert.get("banks_involved", [])))),
         "SCORE": f"{float(alert['score']):.4f}",
