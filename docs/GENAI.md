@@ -115,6 +115,46 @@ From `state/sar/_runs.jsonl`. "Wall" includes the `docker compose run` container
 - Every SAR states its trigger's ground-truth label and its rank in the review queue. The footer says the alert
   was ranked for analyst review and is not a finding of laundering.
 
+## Bank-local scoring, alerts and reports (CONTRACTS §9.1, Oct 17 21:00 redesign)
+`python -m fedaml.bank_local --banks 1,2,3,4 --sar-engine llm|template|none` runs inside the compose image:
+```
+LLM_MODEL_FILE=qwen2.5-1.5b-instruct-q8_0-be.gguf docker compose up -d --wait llm
+docker compose run --rm genai python3 -m fedaml.bank_local --banks 1,2,3,4 --sar-engine llm
+docker compose stop llm
+```
+- Each bank scores **its own** `data/banks/bank_<b>/test.csv` with `state/global_final_dpon.json`, featurized
+  within the bank. Ranking uses `cap_for_alerts` and drops same-account transfers. Single-bank chains are fine.
+- It writes `state/bank_local/bank_<b>/alerts.json` (top 20, ids `B<b>-A<nn>`, threshold = the score at rank 20),
+  `demo.json` (the bank's top labelled-laundering alert, else its top alert) and `sar/B<b>-A<nn>.md`.
+  `state/bank_local/summary.json` holds aggregates only.
+- The walkthrough's arithmetic is asserted in code: `sigmoid(intercept + Σ value × weight)` equals `score`.
+- The reports use only the bank's own rows. They say "bank <b>'s own test-period records" and carry a scope note.
+- The boundary is logical: separate files and routes on one VM, not network isolation.
+
+Measured on the VM (Oct 17, image `b8c92e2`; reports from `--sar-engine llm` with Qwen 1.5B, 181.9 s for six):
+
+| Bank | Rows scored | Labelled laundering in top 20 | Prevalence | Threshold (rank-20 score) | Same-account skipped | Demo alert | Report engine |
+|---|---|---|---|---|---|---|---|
+| 1 | 89,972 | 0 | 0.136% | 0.995263 | 0 | B1-A01 (not labelled) | template (fallback) |
+| 2 | 14,236 | 1 | 0.190% | 0.999487 | 6 | B2-A19 | llm, 29.7 s |
+| 3 | 12,959 | 2 | 0.085% | 0.998214 | 9 | B3-A04 | llm, 31.3 s |
+| 4 | 12,443 | **7** | 0.209% | 0.998881 | 19 | **B4-A01 (walkthrough)** | llm, 29.6 s |
+
+- **Walkthrough: bank 4, B4-A01.** Rank 1, score 0.999823 (uncapped 0.999873), threshold 0.998881, priority high,
+  labelled laundering in the synthetic data. It is a 25.6 M EUR ACH payment; the sender made 8 other payments
+  to 3 other receivers in bank 4's records.
+- Bank 4's queue holds 7 labelled cases in 20 (35%), about 167× its prevalence. The same post-hoc cap caveat
+  applies as for the central queue.
+- **Claim check of the six reports.** The walkthrough B4-A01 passes: ACH, large amount, no onward movement;
+  the "layered" typology is described, not asserted. B4-A02, B3-A04 and B2-A19 pass; their quoted counts match.
+  B4-A03 is borderline: it says the receiver "collects payments from multiple unrelated payers". The receiver
+  collected 3, and "unrelated" is copied from the example. B1-A01 fell back to the template because the count
+  check wrongly rejected "873 distinct receivers", which was correct. Fixed in `60bccec`; not rerun, since bank
+  1 is not the walkthrough.
+- **Fixes found by this run.** The sender's other-receiver count is now computed from the bank's full records,
+  not the 10 displayed rows. The verdict filter also drops "suspicion of laundering", "part of a … scheme" and
+  "the same receiver".
+
 ## Container
 ```
 docker build -f fedaml/llm/Dockerfile -t fedaml-llm .           # ~5.5 min on the VM, 289 MB image
