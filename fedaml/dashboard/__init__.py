@@ -113,6 +113,9 @@ def aggregate_alerts(summary: Any) -> dict | None:
     if not isinstance(summary, dict):
         return None
     out: dict[str, Any] = {k: summary[k] for k in _AGG_TOP if k in summary and not isinstance(summary[k], (dict, list))}
+    wb = summary.get("walkthrough_bank")   # which bank's demo the UI replays; an int 1..4 or nothing
+    if isinstance(wb, int) and not isinstance(wb, bool) and str(wb) in BANK_IDS:
+        out["walkthrough_bank"] = wb
     per = summary.get("per_bank") if isinstance(summary.get("per_bank"), dict) else {}
     out["per_bank"] = {}
     for b, v in per.items():

@@ -162,3 +162,15 @@ def test_bank_route_size_cap(tmp_path):
     state, logs = _bank_local_fixture(tmp_path)
     (state / "bank_local" / "bank_1" / "sar" / "B1-A03.md").write_bytes(b"x" * (256 * 1024 + 1))
     assert create_app(state, logs).test_client().get("/api/bank/1/sar/B1-A03").status_code == 404
+
+
+def test_walkthrough_bank_whitelisted_and_validated(tmp_path):
+    from fedaml.dashboard import aggregate_alerts
+    assert aggregate_alerts({"walkthrough_bank": 4, "per_bank": {}})["walkthrough_bank"] == 4
+    for bad in (0, 5, -1, "4", 4.0, True, None, [4], {"b": 4}):
+        assert "walkthrough_bank" not in aggregate_alerts({"walkthrough_bank": bad, "per_bank": {}}), bad
+    state, logs = _bank_local_fixture(tmp_path)
+    summ = json.loads((state / "bank_local" / "summary.json").read_text()); summ["walkthrough_bank"] = 2
+    (state / "bank_local" / "summary.json").write_text(json.dumps(summ))
+    s = create_app(state, logs).test_client().get("/api/state").get_json()
+    assert s["alerts_aggregate"]["walkthrough_bank"] == 2
