@@ -82,7 +82,7 @@ def sar_alert(b: int, rank: int, pos: int, df: pd.DataFrame, s: dict, model: dic
     a = A._alert(rank, pos, idx, s["p"], s["X"], s["coef"], list(model["feature_names"]), model,
                  rows, n_s, n_r, banks, labels)
     a["alert_id"] = f"B{b}-A{rank:02d}"
-    a["sample_desc"] = f"bank {b}'s own test period, its own records only"
+    a["sample_desc"] = f"bank {b}'s own test-period records"
     a["scope_note"] = (f"Scored inside bank {b} on its own records with the shared model; no other bank's rows "
                        "were used and nothing in this report leaves the bank.")
     return a
