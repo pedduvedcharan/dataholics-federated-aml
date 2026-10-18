@@ -33,7 +33,7 @@ big-endian s390x).
 - Optional: slide deck PDF `submission/slides.pdf`
 
 **Screenshots for criterion 3** (in `submission/screenshots/`): `01_vm_facts.txt` (uname, lscpu s390x), `02_docker_ps.txt`
-(docker ps + stats with 4 banks training), `dashboard_*.png` (regulator panels, red team, rogue, footprint, alerts).
+(docker ps + stats with 4 banks training), `dashboard_*.png` (regulator panels, red team, rogue, footprint, alerts), and `site/` (17 frames of the 4-tab presentation website at 1920×1080: problem, 6 architecture steps, results, and every stage of the bank-4 end-to-end workflow).
 
 **Before pressing submit:** repo is public (yes, verified); no data, `.pem` or secrets in git; README links work; the video
 is under 3:00 and playable without sign-in.
