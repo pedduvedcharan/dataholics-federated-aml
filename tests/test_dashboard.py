@@ -41,3 +41,13 @@ def test_egress_summary_is_merged(tmp_path):
     assert t["messages"] == 1 and t["blocked"] == 1 and t["rows_shared"] == 0 and t["params_shared"] == 21
     assert [r["kind"] for r in s["egress"]["tail"]] == ["model_update", "blocked"]
     assert s["eps_budget"] == 8
+
+
+def test_empty_egress_dir_shows_zero_not_error(tmp_path):
+    """Between takes logs/egress/*.jsonl is archived: the dir exists but is empty."""
+    logs = tmp_path / "logs" / "egress"; logs.mkdir(parents=True)
+    app = create_app(tmp_path / "state", logs)
+    s = app.test_client().get("/api/state").get_json()
+    t = s["egress"]["totals"]
+    assert t["messages"] == 0 and t["rows_shared"] == 0 and t["blocked"] == 0 and t["params_shared"] == 0
+    assert s["egress"]["tail"] == [] and s["files"]["logs/egress"] == {"present": True, "n_files": 0}

@@ -182,7 +182,7 @@ function renderRegulator(s) {
   $('v-params').textContent = fmtInt(t.params_shared);
   $('m-params').textContent = t.bytes ? `${kb(t.bytes)} of clipped + noised weight deltas` : '';
   $('v-msgs').textContent = fmtInt(t.messages);
-  $('m-msgs').textContent = banks ? Object.entries(pb).map(([b, e]) => `b${b}:${e.messages}`).join(' ') : '';
+  $('m-msgs').textContent = banks ? Object.entries(pb).map(([b, e]) => `b${b}:${e.messages}`).join(' ') : 'no model updates yet';
   const bl = t.blocked || 0;
   $('v-blocked').textContent = fmtInt(bl);
   $('t-blocked').className = 'tile ' + (bl > 0 ? 'crit' : '');
@@ -190,7 +190,9 @@ function renderRegulator(s) {
   $('reg-note').textContent = banks ? `logs/egress · ${s.files && s.files['logs/egress'] ? s.files['logs/egress'].n_files : banks} files` : 'waiting for logs/egress';
 
   const tail = (eg.tail || []).slice(-10);
-  if (tail.length) {
+  if (!tail.length) {   // logs archived between takes: clear the old lines instead of leaving them on screen
+    $('tail').innerHTML = '<div class="l"><span class="t">waiting for the first egress line…</span></div>';
+  } else {
     $('tail').innerHTML = tail.map(r => {
       const kind = r.kind || '?';
       let body;
