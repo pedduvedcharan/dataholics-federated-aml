@@ -46,8 +46,8 @@ export const Rogue: React.FC<{ narration: string }> = ({ narration }) => {
           const rogue = i === 4;
           const y = nodeY(i) + NODE_H / 2;
           const x0 = NODE_X + NODE_W;
-          const w = rogue ? 4 + 10 * red : 4;
           const cut = rogue ? excl : 0;
+          const w = rogue && cut <= 0.5 ? 4 + 10 * red : 4;
           return (
             <g key={i}>
               <line
@@ -100,7 +100,7 @@ export const Rogue: React.FC<{ narration: string }> = ({ narration }) => {
             }}
           >
             <div style={{ fontFamily: fonts.condensed, fontWeight: 600, fontSize: 30 }}>Bank {i + 1}</div>
-            <div style={{ fontFamily: fonts.mono, fontSize: 16 }}>{rogue && red > 0.5 ? "rogue · poisoned update" : "honest"}</div>
+            <div style={{ fontFamily: fonts.mono, fontSize: 16 }}>{rogue && red > 0.5 ? "rogue · poisoned" : "honest"}</div>
           </div>
         );
       })}
@@ -161,8 +161,8 @@ export const Rogue: React.FC<{ narration: string }> = ({ narration }) => {
           </g>
         </svg>
       </div>
-      <div style={{ position: "absolute", left: 950, top: 800, ...badge }}>
-        <Pill bg={C.green50} size={26}>
+      <div style={{ position: "absolute", left: NODE_X, top: 834, ...badge }}>
+        <Pill bg={C.green50} size={20}>
           bank 5 excluded {rogueExcludedRounds} / {rogueRounds} rounds · {honestExcluded === 0 ? "no honest bank excluded" : `${honestExcluded} honest exclusions`}
         </Pill>
       </div>

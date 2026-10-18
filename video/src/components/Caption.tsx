@@ -65,7 +65,7 @@ export const Caption: React.FC<{ text: string; dark?: boolean }> = ({ text }) =>
         <div
           style={{
             maxWidth: 1580,
-            background: "rgba(22,22,22,0.92)",
+            background: "rgba(38,38,38,0.94)",
             borderLeft: `6px solid ${C.blue60}`,
             padding: "18px 34px",
             color: C.white,

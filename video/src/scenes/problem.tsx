@@ -79,8 +79,8 @@ export const Problem: React.FC<{ narration: string }> = ({ narration }) => {
       <div
         style={{
           position: "absolute",
-          left: DB_X - 250,
-          width: 500,
+          left: DB_X - 360,
+          width: 720,
           top: DB_Y + 160,
           textAlign: "center",
           fontFamily: fonts.mono,
