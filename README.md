@@ -33,7 +33,8 @@ sandboxed containers from **one image** on a single IBM LinuxONE VM (s390x, 3 co
 | `rogue` | A fifth bank that poisons its updates (scaled or label-flipped) to hide its own laundering. Synthetic attack. | `fedaml/rogue.py` |
 | `coordinator` | Federated averaging weighted by (capped) sample counts; rogue defense by norm check and cosine distance to the coordinate-wise median; approximate ε accounting; writes the global model and `state/status.json` every round. | `fedaml/coordinator.py`, `fedaml/defense.py` |
 | egress function | The **only door out of a bank**. Refuses any payload with raw-row keys or oversized lists, logs every message with `rows_shared: 0` and `params_shared: N`. | `fedaml/egress.py`, `scripts/try_leak.py` |
-| `dashboard` | The "regulator view": live egress counters, AUC per round against single-bank baselines, privacy-budget meter, rogue exclusions, red-team table, footprint. Port 8050, host-only. | `fedaml/dashboard/` |
+| `dashboard` | The project's presentation website and live monitor (4 tabs: The Problem, Our Architecture, Results & Dashboard, Live Workflow). The regulator view is **aggregate only** (`/api/state` is scrubbed of account ids, amounts and timestamps, enforced by tests); each bank's alerts, demo transaction and reports are served only through bank-scoped routes `/api/bank/<b>/…`. In this demo all banks share one VM, so the boundary is logical, not network isolation. Port 8050, host-only. | `fedaml/dashboard/` |
+| bank-local pipeline | After training, each bank scores **its own** test transactions with the final federated model, builds its own review queue (top 20) and writes its own investigator report; only aggregate counts go to the regulator. | `fedaml/bank_local.py`, `docs/CONTRACTS.md` §9 |
 | `attacker` | Membership-inference red team (loss-threshold, shadow model, IBM ART black-box) against the global model with DP off vs DP on. | `fedaml/redteam.py` |
 | `llm` + `genai` | llama.cpp serving a big-endian GGUF of Qwen2.5-0.5B-Instruct; the SAR writer fills prose only, code inserts every number, id and model hash; template fallback. | `fedaml/llm/`, `fedaml/sar.py`, `fedaml/alerts.py` |
 | features / baselines | 20 per-row features that need **no cross-bank statistics**; per-bank LogReg / Random Forest / HistGradientBoosting comparison and the "centralized pooling" model trained on all banks' raw rows (what TMNL did). | `fedaml/features.py`, `fedaml/baselines.py`, `docs/FEATURES.md` |
@@ -74,8 +75,11 @@ docker compose run --rm llm /app/fetch_model.sh   # one-off: download + big-endi
 docker compose up -d --wait llm && SAR_ENGINE=llm ALERT_ID=A01 docker compose run --rm genai && docker compose stop llm
                                               # SAR written by the CPU LLM (llama.cpp, Qwen2.5 on s390x)
 
-# regulator dashboard, from your laptop
-ssh -L 8050:localhost:8050 dataholics         # then open http://localhost:8050
+# bank-local scoring, alerts and reports (after training; uses the final federated model)
+docker compose run --rm genai python3 -m fedaml.bank_local --banks 1,2,3,4 --sar-engine llm   # or template
+
+# the presentation website / regulator dashboard, from your laptop
+ssh -L 8050:localhost:8050 dataholics         # then open http://localhost:8050 (F full screen, T timer, arrows navigate)
 ```
 
 Nothing is published to the internet: all ports bind `127.0.0.1` on the VM and are reached through an SSH tunnel.
@@ -101,6 +105,8 @@ table with every row's file of origin is [`docs/RESULTS_TABLE.md`](docs/RESULTS_
 | Membership auditing game (bank 3), σ 0.3 / σ 0.5 / σ 0.8: attack AUC | 0.551 (weak leak) / 0.517 (near chance, the demo setting) / 0.497 | `state/redteam.json` |
 | Formal ε (approximate, update-level, 10 rounds, σ 0.5) | ≈ 46 (loose; the measured attack above is the evidence) | `state/status_dpon.json`, `state/redteam.json` |
 | LLM generation speed on s390x | 27.3 tok/s mean (100 tokens, 3 threads) | `state/llm_runtime.json` |
+| Bank-local walkthrough alert (bank 4) | B4-A01, rank 1 of 20, score 0.999823 ≥ threshold 0.998881, labelled laundering (synthetic); report by Qwen2.5-1.5B in 29.6 s | `state/bank_local/bank_4/demo.json` |
+| Labelled laundering in each bank's own top 20 | bank 1: 0 · bank 2: 1 · bank 3: 2 · bank 4: 7 (post-hoc ranking cap, disclosed) | `state/bank_local/summary.json` |
 | Peak RAM per container (bank 1 / banks 2–4 / coordinator / dashboard / attacker) | 725 / 158–164 / 175 / 25 / 470 MB; sum of peaks 1,880 MB of 7.8 GB | `state/footprint.json` |
 | Seconds per federated round (DP on, 4 banks) / full demo pipeline (DP off + DP on + tools) | 2.12 s / 127 s | `state/footprint.json`, `logs/run_demo_20261017T211056Z.log` |
 
