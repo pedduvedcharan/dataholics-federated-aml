@@ -111,6 +111,10 @@
   tr.ex td { background: #FCF0E8; }
   table.plain th { background: transparent; color: var(--muted); border-bottom: 1px solid var(--hair); border-radius: 0 !important; position: static; }
   .scroll { overflow: auto; }
+  .card { overflow-x: auto; }
+  #red-body th, #red-body td { padding: 6px 7px; font-size: 12px; }
+  #red-body th { font-size: 11.5px; line-height: 1.25; }
+  body.solo #red-body svg { max-width: 760px; }
 
   /* ---- chips ---- */
   .tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500;
@@ -125,12 +129,15 @@
   .legendrow .sw { display: inline-block; width: 16px; height: 0; border-top: 2px solid; vertical-align: 3px; margin-right: 6px; }
 
   /* ---- stat strip (tan band) + meter ---- */
-  .strip { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--tan); border-radius: 16px; overflow: hidden; color: var(--ink); }
-  .strip .cell { padding: 12px 16px 14px; border-left: 1px solid var(--tan-line); min-width: 0; }
+  .strip { display: grid; grid-auto-flow: column; grid-auto-columns: auto; background: var(--tan); border-radius: 16px; overflow: hidden; color: var(--ink); }
+  .strip .cell { padding: 12px 14px 14px; border-left: 1px solid var(--tan-line); min-width: 0; }
   .strip .cell:first-child { border-left: 0; }
   .strip .k { font-size: 12px; font-weight: 500; color: #3a2a1f; }
   .strip .v { font-size: 28px; line-height: 1.1; font-weight: 400; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .strip .m { font-size: 11.5px; color: #3a2a1f; margin-top: 3px; }
+  #priv-body .strip .v { font-size: 24px; }
+  #train-table th, #train-table td { padding: 6px 7px; font-size: 12px; }
+  #train-table th { font-size: 11.5px; line-height: 1.25; }
   .meter { margin: 14px 0 12px; }
   .meter .bar { height: 14px; background: #fff; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--hair); overflow: visible; position: relative; }
   .meter .fill { height: 100%; width: 0; background: var(--primary); transition: width .6s ease; border-radius: 999px; }
@@ -147,7 +154,7 @@
   .verdict.warn { box-shadow: inset 4px 0 0 var(--warn); }
   .entity { display: flex; flex-direction: column; gap: 2px; }
   .entity .e-lbl { font-size: 14px; font-weight: 500; color: var(--primary); }
-  .entity .e-id { font-size: 22px; color: var(--primary); font-family: var(--mono); }
+  .entity .e-id { font-size: 22px; color: var(--primary); }
   .entity .e-st { font-size: 14px; color: var(--ink-2); }
   .entity .e-name { font-size: 40px; line-height: 1.05; font-weight: 400; letter-spacing: -0.02em; margin-top: 6px; font-variant-numeric: tabular-nums; }
   .entity .e-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
@@ -158,6 +165,8 @@
 
   .hbar { display: inline-block; height: 12px; background: var(--s1); border-radius: 0 6px 6px 0; vertical-align: middle; margin-right: 10px; }
   .foot { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  #foot-body th:first-child, #foot-body td:first-child { width: 200px; }
+  #foot-body td { padding: 5px 12px; }
 
   /* ---- solo capture mode ---- */
   body.solo .topbar, body.solo .pagehead, body.solo #banner-keep-hidden { display: none; }
@@ -166,7 +175,7 @@
   body.solo .panel.solo-on [style*="max-height"] { max-height: none !important; overflow: visible !important; }
 
   /* ---- 7. alert queue (case list) + entity card + report ---- */
-  .aq { display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; min-height: 0; }
+  .aq { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; min-height: 0; }
   .aq .queue { max-height: 600px; overflow: auto; padding: 10px; }
   .aq table tr.sel td { background: var(--cream); }
   .aq table tr.sel td .tag { background: #fff; }
@@ -175,7 +184,9 @@
   .aq table tr.sel:hover td { background: var(--cream); }
   .aq .tag { white-space: nowrap; }
   .aq .queue table { font-size: 12.5px; }
-  .aq .queue th, .aq .queue td { padding: 7px 10px; white-space: nowrap; }
+  .aq .queue th, .aq .queue td { padding: 7px 7px; white-space: nowrap; }
+  .aq .queue td { font-size: 12px; }
+  .aq .queue .tag { font-size: 11.5px; padding: 1px 8px; }
   .aq .queue td.cur { color: var(--muted); }
   .aq .queue td.aid { color: var(--primary); font-family: var(--mono); font-weight: 500; }
   #aq-meta { font-size: 14px; color: var(--ink); margin-bottom: 14px; }
@@ -190,9 +201,11 @@
   .sar em { color: var(--muted); }
   .sar .llm { border-left: 4px solid var(--s7); background: rgba(168,132,188,0.14); padding: 10px 14px; border-radius: 0 12px 12px 0; color: var(--ink); }
   .sar .llm-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--s7); margin-bottom: 3px; font-weight: 600; }
-  .provenance { display: flex; gap: 6px 16px; font-size: 12px; color: var(--ink-2); margin: 14px 0 8px; flex-wrap: wrap; }
+  .provenance { display: flex; gap: 4px 16px; font-size: 12px; color: var(--ink-2); margin: 10px 0 8px; flex-wrap: wrap; }
   .provenance .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
-  #aq-entity { margin-bottom: 0; }
+  #aq-entity { margin-bottom: 0; padding: 14px 20px; }
+  #aq-entity .e-name { font-size: 34px; margin-top: 4px; }
+  #aq-entity .e-row { margin-top: 6px; }
   body.solo .aq .queue, body.solo .sar { max-height: 620px; }
 
   /* evidence footer: plain hairline table */
@@ -200,7 +213,7 @@
   footer.panel#p-evidence h2 { color: var(--ink); }
   footer.panel#p-evidence td { font-size: 13px; vertical-align: top; }
 
-  @media (max-width: 1000px) { .aq { grid-template-columns: 1fr; } }
+  @media (max-width: 1000px) { .aq { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } .reg { grid-template-columns: 1fr 1fr; } .topbar nav { display: none; } .strip { grid-auto-flow: row; } }
 </style>
 </head>
@@ -592,7 +605,7 @@ function renderRedteam(s) {
 
 /* dot-and-whisker: attack AUC with 90% CI per setting; x 0.45–1.0; dashed coin-flip line at 0.5 */
 function auditChart(entries, isCurrent) {
-  const W = 720, rowH = 32, top = 24, left = 84, right = 214, xMin = 0.45, xMax = 1.0;
+  const W = 600, rowH = 32, top = 24, left = 70, right = 200, xMin = 0.45, xMax = 1.0;
   const H = top + entries.length * rowH + 22;
   const x = v => left + (Math.max(xMin, Math.min(xMax, v)) - xMin) / (xMax - xMin) * (W - left - right);
   const col = v => { const u = String(v || '').toUpperCase(); return u === 'PROTECTED' ? css('--s3') : css('--crit'); };
@@ -613,7 +626,7 @@ function auditChart(entries, isCurrent) {
       <circle cx="${x(r.attack_auc)}" cy="${y}" r="5.5" fill="${c}" stroke="${css('--surface')}" stroke-width="2"/>
       <text x="${W - right + 12}" y="${y + 4}" fill="${css('--ink-2')}" font-size="12.5">${f3(r.attack_auc)} · ${esc(String(r.verdict || '').toUpperCase())}${isCurrent(k, r) ? ' · this run' : ''}</text>`;
   });
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px; display:block; margin:2px 0 0; font-family:Geist, Arial, sans-serif" role="img" aria-label="attack AUC with 90% confidence interval per DP setting">${g}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block; margin:2px 0 0; font-family:Geist, Arial, sans-serif" role="img" aria-label="attack AUC with 90% confidence interval per DP setting">${g}</svg>`;
 }
 
 /* DP auditing game (REDTEAM): rows = {setting: {sigma, attack_acc, attack_auc, attack_auc_ci90, eps_empirical_lower_95, eps_accountant_1round, verdict, n_scored}} */
