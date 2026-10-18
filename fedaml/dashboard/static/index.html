@@ -155,6 +155,8 @@
 
   <section class="panel" id="p-rogue">
     <h2>4 · Rogue bank — accepted / excluded per round <span class="note" id="rogue-note"></span></h2>
+    <div id="ap-wrap" style="display:none"><div class="chartbox" style="height:170px"><canvas id="apChart"></canvas></div>
+      <div id="ap-note" style="color:var(--muted); font-size:11px; margin:2px 0 8px"></div></div>
     <div id="rogue-body" class="waiting">waiting for status.json</div>
   </section>
 
@@ -377,8 +379,41 @@ function renderPrivacy(s) {
         + (dp.epsilon_note ? ' Coordinator note: ' + esc(dp.epsilon_note) : '')}</p>`;
 }
 
+/* AP per round, defense off vs on (MASTER 18:45 B): the AP collapse is the visible damage */
+let apChart = null;
+function renderApChart(s) {
+  const off = s.status_rogue_off, on = s.status_rogue_on;
+  const ok = x => x && Array.isArray(x.rounds) && x.rounds.length;
+  if (!ok(off) || !ok(on) || typeof Chart === 'undefined') { $('ap-wrap').style.display = 'none'; return; }
+  $('ap-wrap').style.display = '';
+  const n = Math.max(off.rounds.length, on.rounds.length);
+  const labels = Array.from({ length: n }, (_, i) => 'r' + (i + 1));
+  const ser = x => labels.map((_, i) => (x.rounds[i] && typeof x.rounds[i].global_ap === 'number') ? x.rounds[i].global_ap : null);
+  const dOff = ser(off), dOn = ser(on);
+  const lastV = d => { for (let i = d.length - 1; i >= 0; i--) if (d[i] != null) return d[i]; return null; };
+  const datasets = [
+    { label: 'defense on: rogue screened out', data: dOn, borderColor: css('--s3'), backgroundColor: css('--s3'), borderWidth: 2, pointRadius: 3, tension: 0.15, endLabel: `on ${f3(lastV(dOn))}` },
+    { label: 'defense off: poisoned update averaged in', data: dOff, borderColor: css('--s2'), backgroundColor: css('--s2'), borderWidth: 2, pointRadius: 3, tension: 0.15, endLabel: `off ${f3(lastV(dOff))}` },
+  ];
+  const ymax = Math.max(0.05, ...dOff.concat(dOn).filter(v => v != null)) * 1.15;
+  if (!apChart) {
+    apChart = new Chart($('apChart'), { type: 'line', data: { labels, datasets }, plugins: [endLabel], options: {
+      animation: false, responsive: true, maintainAspectRatio: false, layout: { padding: { right: 70 } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: true, position: 'top', align: 'start', labels: { color: css('--ink-2'), boxWidth: 14, boxHeight: 2, font: { size: 11 } } },
+                 tooltip: { callbacks: { label: c => `${c.dataset.label}: AP ${f3(c.parsed.y)}` } } },
+      scales: { x: { grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') } },
+                y: { min: 0, max: ymax, grid: { color: css('--grid') }, ticks: { color: css('--muted') }, border: { color: css('--axis') },
+                     title: { display: true, text: 'AP', color: css('--muted'), font: { size: 11 } } } } } });
+  } else { apChart.data.labels = labels; apChart.data.datasets = datasets; apChart.options.scales.y.max = ymax; apChart.update('none'); }
+  const la = x => x.rounds[x.rounds.length - 1].global_auc;
+  const lp = x => x.rounds[x.rounds.length - 1].global_ap;
+  $('ap-note').textContent = `AP per round with rogue bank present (AP = precision on the rare laundering class). Final AUC: defense off ${f3(la(off))} · defense on ${f3(la(on))}; final AP: off ${f3(lp(off))} · on ${f3(lp(on))}. Both runs: DP off.`;
+}
+
 /* ---------- 4. rogue bank ---------- */
 function renderRogue(s) {
+  try { renderApChart(s); } catch (e) { $('ap-wrap').style.display = 'none'; }
   let st = s.status; let src = 'status.json';
   const hasEx = x => x && Array.isArray(x.rounds) && x.rounds.some(r => (r.excluded || []).length);
   if (!hasEx(st) && hasEx(s.status_rogue_on)) { st = s.status_rogue_on; src = 'status_rogue_on.json'; }
