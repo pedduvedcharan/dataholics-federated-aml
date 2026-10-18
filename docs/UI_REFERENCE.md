@@ -67,3 +67,34 @@ row, and the claims wording (ranked for analyst review; near chance at σ 0.5; d
 stay exactly as they are. Status meaning keeps a text label beside any color. Readable at 1280×720.
 Light theme is the reference look; keep a dark theme only if it costs nothing, otherwise ship light-only
 with explicit colors.
+
+---
+
+## IBM palette (lead's decision, Oct 17 2026 19:45 CDT) — supersedes every color above
+
+All project visuals (dashboard, slide deck, explainer page, video) use IBM's published Carbon color
+palette. Shapes, spacing, type scale and components from the sections above stay; **only colors change**.
+No IBM logo or 8-bar mark anywhere (brand assets, not colors). Values are the Carbon tokens.
+
+| Role | Carbon token | Hex |
+|---|---|---|
+| page background | Gray 10 | `#F4F4F4` |
+| surface / cards (white) | White | `#FFFFFF` |
+| raised panel (replaces sage) | Blue 10 | `#EDF5FF` (border Blue 20 `#D0E2FF`) |
+| ink, table header band, dark slides | Gray 100 | `#161616` (second dark: Gray 90 `#262626`) |
+| secondary text | Gray 70 | `#525252` (tertiary Gray 60 `#6F6F6F`) |
+| hairlines / dividers | Gray 20 | `#E0E0E0` (strong: Gray 30 `#C6C6C6`) |
+| primary (buttons, links, KPI numbers, ids, progress) | Blue 60 | `#0F62FE` (hover/dark: Blue 70 `#0043CE`, deep: Blue 80 `#002D9C`) |
+| stat strip (replaces tan) | Gray 90 band with white text, or Blue 80 `#002D9C` | |
+| selected row (replaces cream) | Blue 20 | `#D0E2FF` |
+| success / PROTECTED / defense on | Green 50 | `#24A148` (tint Green 10 `#DEFBE6`) |
+| warning / WEAK LEAK / amber meter | Yellow 30 | `#F1C21B` (dark text on it) |
+| serious / orange badge / rogue off line | Orange 40 | `#FF832B` |
+| error / LEAKS / rogue chip / blocked | Red 60 | `#DA1E28` (tint Red 10 `#FFF1F1`) |
+| LLM-written marking | Purple 60 | `#8A3FFC` (tint Purple 10 `#F6F2FF`) |
+| chart series 1 / 2 / 3 / 4 | Blue 60 / Purple 70 / Teal 60 / Magenta 60 | `#0F62FE` / `#6929C4` / `#007D79` / `#D02670` |
+| chart extra | Cyan 50 | `#1192E8` |
+
+Rules: status color always carries a text label; text on Yellow 30 is Gray 100; text on Blue 60, Gray 100,
+Red 60, Green 50 is White; contrast ≥ 4.5:1 for body text. Fonts unchanged in the dashboard (Geist); the deck,
+explainer and video use IBM Plex (Sans, Sans Condensed, Mono), IBM's open-source typeface.
