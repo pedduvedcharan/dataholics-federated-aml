@@ -97,7 +97,7 @@ export const Live: React.FC<{ narration: string; hasLiveDemo: boolean; muteDemo:
         <div style={{ position: "absolute", left: 0, top: -54, fontFamily: fonts.mono, fontSize: 24, color: C.yellow30 }}>
           Recorded on IBM LinuxONE (s390x), 17 Oct 2026 · screenshots of the running system
         </div>
-        <div style={{ position: "absolute", right: 0, top: -54, fontFamily: fonts.mono, fontSize: 24, color: C.gray30 }}>
+        <div style={{ position: "absolute", left: 0, bottom: -40, fontFamily: fonts.mono, fontSize: 22, color: C.gray30 }}>
           {captions[idx]}
         </div>
       </div>

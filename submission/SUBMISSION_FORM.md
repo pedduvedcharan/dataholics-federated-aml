@@ -25,7 +25,7 @@ pooling and the federated model compared) · Predictive + Generative AI (federat
 big-endian s390x).
 
 **Links**
-- Video (≤ 3 min): `[VIDEO LINK]`
+- Video (≤ 3 min): `[VIDEO LINK]` ← upload `video/out/dataholics-submission.mp4` (2:56, 1920×1080, 8.4 MB; scene 5 = screenshots of the running system on LinuxONE, labelled as such)
 - Public repository: https://github.com/pedduvedcharan/dataholics-federated-aml
 - Dataset: https://www.kaggle.com/datasets/ealtman2019/ibm-transactions-for-anti-money-laundering-aml
 - Open-source libraries: see `submission/LIBRARIES.md` (paste the list) and README §5
