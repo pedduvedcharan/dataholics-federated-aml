@@ -286,6 +286,16 @@
   body.solo #solo-host .panel.solo-on { grid-column: 1 / -1; }
   body.solo #solo-host .panel.solo-on [style*="max-height"] { max-height: none !important; overflow: visible !important; }
   body.solo #solo-host .aq .queue, body.solo #solo-host .sar { max-height: 44rem; }
+  /* bottom page nav: its own band; pages end above it, so it never covers content */
+  #pnav { left: 0; right: 0; bottom: 0; height: 3.4rem; padding: 0 1.6rem; justify-content: flex-end; background: rgba(255,255,255,0.96); border-top: 1px solid var(--hair); }
+  #pnav .where { background: transparent; }
+  body.dark-hdr #pnav { background: #001141; border-top-color: rgba(255,255,255,0.12); }
+  body.dark-hdr #pnav .where { background: transparent; }
+  .pg { bottom: 3.4rem; }
+  .pin { padding-bottom: 2rem; }
+  .arch .st.past { opacity: .45; }
+  body.solo .pg { bottom: 0; }
+  #wf-end { scroll-margin-bottom: 1rem; }
 
   /* ===== audit panels (scoped under .dash; sizes in rem so they scale with the slide) ===== */
   .dash .num, .dash td.num, .dash .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
@@ -1666,6 +1676,7 @@ function wfSetBank(b) {
   loadQueue(b);
 }
 function wfStageRender(i) {
+  if (i === 6 && wf.stage !== 6) setTimeout(() => $('wf-end').scrollIntoView({ block: 'end', behavior: REDUCED ? 'auto' : 'smooth' }), 350);   // keep the end line in view (pages end above the nav band)
   wf.stage = i;
   for (let k = 0; k < 6; k++) {
     const n = $('wf-n' + k); n.classList.toggle('on', k === i || (i >= 6 && k === 5)); n.classList.toggle('done', k < i);
@@ -1755,7 +1766,7 @@ function wfStageAt(t) { let i = 0; for (let k = 0; k < WF_BOUNDS.length; k++) if
 function wfTick() {
   const now = performance.now(); wf.elapsed += (now - wf.last) / 1000; wf.last = now;
   if (wf.elapsed >= WF_TOTAL) { wf.elapsed = WF_TOTAL; wfPauseUi(false); wf.running = false; clearInterval(wf.h); wf.h = null; $('wf-run').textContent = '↺ Run again'; $('wf-pause').disabled = true; $('wf-skip').disabled = true; }
-  const i = wfStageAt(wf.elapsed); if (i !== wf.stage) { wfStageRender(i); if (i === 6) setTimeout(() => $('wf-end').scrollIntoView({ block: 'end', behavior: REDUCED ? 'auto' : 'smooth' }), 300); }
+  const i = wfStageAt(wf.elapsed); if (i !== wf.stage) wfStageRender(i);
   wfTimeline(); updateProgress();
 }
 function wfTimeline() {
