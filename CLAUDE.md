@@ -47,6 +47,7 @@ Read this file first, then `docs/CONTRACTS.md`, then your own brief in `agents/`
 | `agents/05-AUDIT-DASHBOARD.md` | Egress audit function, regulator dashboard data + routes, privacy meter | `fedaml/egress.py`, `fedaml/dashboard/*.py`, `tests/test_dashboard.py` |
 | `agents/06-GENAI.md` | LLM runtime test on s390x, SAR generator, template fallback | `fedaml/sar.py`, `fedaml/llm/` |
 | `agents/07-UI.md` | Dashboard presentation layer, styled to `docs/UI_REFERENCE.md` (added Oct 17 19:20) | `fedaml/dashboard/static/` (AUDIT keeps the Python app, routes and tests) |
+| `agents/08-VIDEO.md` | The ≤3-min video in Remotion, timed to `submission/VIDEO_SCRIPT.md` (added Oct 17 19:50) | `video/` |
 
 Each agent: read this file + `docs/CONTRACTS.md` + your brief. Work only in the paths you own; if you must change a shared contract, write the proposal in `STATUS.md` under "Contract changes" and ping MASTER. Never edit another agent's files. Keep every step runnable; commit small and often.
 

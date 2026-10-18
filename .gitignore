@@ -16,3 +16,9 @@ __pycache__/
 .vscode/
 # reset_run.sh archives previous runs here (VM)
 archive/
+
+# Remotion video build (VIDEO agent)
+video/node_modules/
+video/out/
+video/public/*.mp4
+video/public/*.mp3
