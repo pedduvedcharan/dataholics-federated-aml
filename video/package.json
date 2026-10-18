@@ -1,0 +1,23 @@
+{
+  "name": "dataholics-video",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dataholics submission video (IBM Z Datathon 2026), built with Remotion",
+  "scripts": {
+    "studio": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "stills": "remotion still Dataholics out/still-architecture.png --frame=1850 && remotion still Dataholics out/still-results.png --frame=3450 && remotion still Dataholics out/still-redteam.png --frame=4560",
+    "render": "remotion render Dataholics out/dataholics-draft.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.530",
+    "@remotion/google-fonts": "4.0.530",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.530"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "typescript": "5.6.3"
+  }
+}
