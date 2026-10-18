@@ -212,8 +212,8 @@
   .wfd .node rect.box { fill: #fff; stroke: #C6C6C6; stroke-width: 1.5; transition: fill .4s, stroke .4s; }
   .wfd .node.on rect.box { fill: #EDF5FF; stroke: #0F62FE; stroke-width: 2.5; }
   .wfd .node.done rect.box { fill: #fff; stroke: #0F62FE; }
-  .wfd .node text.n { font-family: "IBM Plex Mono", monospace; font-size: 12px; fill: #0F62FE; }
-  .wfd .node text.t { font-size: 15px; font-weight: 600; fill: #161616; }
+  .wfd .node text.n { font-family: "IBM Plex Mono", monospace; font-size: 14px; fill: #0F62FE; }
+  .wfd .node text.t { font-size: 18px; font-weight: 600; fill: #161616; }
   .wfd .edge { stroke: #C6C6C6; stroke-width: 2; fill: none; transition: stroke .4s; }
   .wfd .edge.on { stroke: #0F62FE; }
   .wfd .reg rect { transition: fill .5s, stroke .5s; }
@@ -276,6 +276,16 @@
   #hdr .brand span { color: #78A9FF; }
   body:not(.dark-hdr) #hdr .brand span { color: var(--primary); }
   .bars2 .trk, .bars2 .fil { display: block; }
+  #pg-4 .pt { font-size: 2rem; }
+  #pg-4 .pin { padding-top: 1.1rem; }
+  .wfd { max-width: 58rem; margin: .4rem auto 0; }
+  .stage { min-height: 17rem; margin-top: .8rem; }
+  .ctlbar { margin-top: .4rem; }
+  .gauge { margin-top: 1.9rem; }
+  body.solo #solo-host .grid { grid-template-columns: minmax(0, 1fr); }
+  body.solo #solo-host .panel.solo-on { grid-column: 1 / -1; }
+  body.solo #solo-host .panel.solo-on [style*="max-height"] { max-height: none !important; overflow: visible !important; }
+  body.solo #solo-host .aq .queue, body.solo #solo-host .sar { max-height: 44rem; }
 
   /* ===== audit panels (scoped under .dash; sizes in rem so they scale with the slide) ===== */
   .dash .num, .dash td.num, .dash .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
@@ -746,24 +756,24 @@ dashboard     fedaml   Up 33 minutes             127.0.0.1:8050->8050/tcp</pre>
           <marker id="wg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6F6F6F"/></marker>
         </defs>
         <!-- outside the bank -->
-        <text x="20" y="22" font-family="IBM Plex Mono, monospace" font-size="12" fill="#6F6F6F">OUTSIDE THE BANK</text>
+        <text x="20" y="22" font-family="IBM Plex Mono, monospace" font-size="14" fill="#6F6F6F">OUTSIDE THE BANK</text>
         <g>
           <rect x="250" y="34" width="330" height="56" rx="8" fill="#001D6C"/>
-          <text x="415" y="58" text-anchor="middle" font-size="15" font-weight="600" fill="#fff">Coordinator · IBM LinuxONE</text>
-          <text x="415" y="78" text-anchor="middle" font-size="12" fill="#D0E2FF">holds only the shared model (21 parameters)</text>
+          <text x="415" y="58" text-anchor="middle" font-size="18" font-weight="600" fill="#fff">Coordinator · IBM LinuxONE</text>
+          <text x="415" y="78" text-anchor="middle" font-size="14" fill="#D0E2FF">holds only the shared model (21 parameters)</text>
         </g>
         <g class="reg" id="wf-reg">
           <rect class="box" x="760" y="34" width="330" height="56" rx="8" fill="#fff" stroke="#C6C6C6" stroke-width="1.5"/>
-          <text x="925" y="58" text-anchor="middle" font-size="15" font-weight="600" fill="#161616">Regulator view</text>
-          <text x="925" y="78" text-anchor="middle" font-size="12" fill="#525252">aggregates only: counts, metrics, audit log</text>
+          <text x="925" y="58" text-anchor="middle" font-size="18" font-weight="600" fill="#161616">Regulator view</text>
+          <text x="925" y="78" text-anchor="middle" font-size="14" fill="#525252">aggregates only: counts, metrics, audit log</text>
         </g>
         <path d="M415 90 L415 140" stroke="#0F62FE" stroke-width="2.5" fill="none" marker-end="url(#wa)"/>
-        <text x="425" y="120" font-size="12" fill="#0043CE" font-weight="600">global model in (21 parameters)</text>
+        <text x="425" y="120" font-size="14" fill="#0043CE" font-weight="600">global model in (21 parameters)</text>
         <path d="M925 140 L925 92" stroke="#6F6F6F" stroke-width="2" stroke-dasharray="6 5" fill="none" marker-end="url(#wg)"/>
-        <text x="935" y="120" font-size="12" fill="#525252">aggregate counts only</text>
+        <text x="935" y="120" font-size="14" fill="#525252">aggregate counts only</text>
         <!-- bank boundary -->
         <rect x="10" y="146" width="1180" height="176" rx="14" fill="rgba(237,245,255,0.6)" stroke="#0F62FE" stroke-width="2" stroke-dasharray="9 6"/>
-        <text x="28" y="170" font-family="IBM Plex Mono, monospace" font-size="12" fill="#0043CE" id="wf-bound">INSIDE THE BANK · private environment</text>
+        <text x="28" y="170" font-family="IBM Plex Mono, monospace" font-size="14" fill="#0043CE" id="wf-bound">INSIDE THE BANK · private environment</text>
         <g id="wf-nodes"></g>
       </svg>
     </div>
@@ -855,6 +865,19 @@ function renderRegulator(s) {
   }
 }
 
+/* offline fallback when the Chart.js CDN is unreachable: the same series as a plain inline-SVG line chart */
+function svgLines(box, labels, datasets, yMin, yMax, yTitle) {
+  const W = 640, H = 230, L = 46, R = 70, T = 12, B = 28; const n = Math.max(2, labels.length);
+  const x = i => L + i * (W - L - R) / (n - 1), y = v => T + (1 - (v - yMin) / (yMax - yMin)) * (H - T - B);
+  let g = '';
+  for (let k = 0; k <= 4; k++) { const v = yMin + k * (yMax - yMin) / 4; g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--grid')}"/><text x="${L - 6}" y="${y(v) + 4}" font-size="11" text-anchor="end" fill="${css('--muted')}">${v.toFixed(2)}</text>`; }
+  labels.forEach((l, i) => { g += `<text x="${x(i)}" y="${H - 8}" font-size="11" text-anchor="middle" fill="${css('--muted')}">${esc(l)}</text>`; });
+  datasets.forEach(ds => { const pts = ds.data.map((v, i) => typeof v === 'number' ? `${x(i)},${y(Math.max(yMin, Math.min(yMax, v)))}` : null).filter(Boolean);
+    if (pts.length) g += `<polyline points="${pts.join(' ')}" fill="none" stroke="${ds.borderColor}" stroke-width="${ds.borderWidth || 2}"${ds.borderDash ? ` stroke-dasharray="${ds.borderDash.join(' ')}"` : ''}/>`;
+    const lastI = ds.data.map((v, i) => typeof v === 'number' ? i : -1).filter(i => i >= 0).pop();
+    if (ds.endLabel && lastI != null) g += `<text x="${x(lastI) + 8}" y="${y(ds.data[lastI]) + 4}" font-size="12" fill="${css('--ink')}">${esc(ds.endLabel)}</text>`; });
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(yTitle)}">${g}</svg>`;
+}
 /* ---------- 2. training chart ---------- */
 let aucChart = null;
 const endLabel = {  // direct-label the last point of selected datasets
@@ -945,7 +968,7 @@ function renderTraining(s) {
   $('auc-legend').innerHTML = legend.map(l => `<span><span class="sw" style="border-color:${l.c}"></span>${esc(l.t)}</span>`).join('');
   $('train-note').textContent = st ? `round ${st.round ?? '?'} of ${st.total_rounds ?? '?'}` + (st.dp && st.dp.enabled ? ' · DP on' : ' · DP off') + (pooledKey ? ` · metric: pooled over ${evalTxt}' test.csv` : ' · metric: global_test.csv (control only)') : 'waiting for status.json';
 
-  if (typeof Chart === 'undefined') { $('aucChart').parentElement.innerHTML = '<div class="waiting">Chart.js not loaded (no CDN access) — see table below</div>'; }
+  if (typeof Chart === 'undefined') { const bx = ($('aucChart') || {}).parentElement || document.querySelector('#p-train .chartbox'); if (bx) svgLines(bx, xs, datasets, yMin(datasets), 1.0, 'ROC AUC per round'); }
   else if (!aucChart) {
     aucChart = new Chart($('aucChart'), { type: 'line', data: { labels: xs, datasets }, plugins: [endLabel], options: {
       animation: false, responsive: true, maintainAspectRatio: false, layout: { padding: { right: 66 } },
@@ -1011,7 +1034,7 @@ let apChart = null;
 function renderApChart(s) {
   const off = s.status_rogue_off, on = s.status_rogue_on;
   const ok = x => x && Array.isArray(x.rounds) && x.rounds.length;
-  if (!ok(off) || !ok(on) || typeof Chart === 'undefined') { $('ap-wrap').style.display = 'none'; return; }
+  if (!ok(off) || !ok(on)) { $('ap-wrap').style.display = 'none'; return; }
   $('ap-wrap').style.display = '';
   const n = Math.max(off.rounds.length, on.rounds.length);
   const labels = Array.from({ length: n }, (_, i) => 'r' + (i + 1));
@@ -1023,7 +1046,8 @@ function renderApChart(s) {
     { label: 'defense off: poisoned update averaged in', data: dOff, borderColor: css('--serious'), backgroundColor: css('--serious'), borderWidth: 2, pointRadius: 3, tension: 0.15, endLabel: `off ${f3(lastV(dOff))}` },
   ];
   const ymax = Math.max(0.05, ...dOff.concat(dOn).filter(v => v != null)) * 1.15;
-  if (!apChart) {
+  if (typeof Chart === 'undefined') { svgLines(document.querySelector('#ap-wrap .chartbox'), labels, datasets, 0, ymax, 'AP per round, defense off vs on'); }
+  else if (!apChart) {
     apChart = new Chart($('apChart'), { type: 'line', data: { labels, datasets }, plugins: [endLabel], options: {
       animation: false, responsive: true, maintainAspectRatio: false, layout: { padding: { right: 72 } },
       interaction: { mode: 'index', intersect: false },
@@ -1603,17 +1627,17 @@ function renderAgg(s) {
 
 /* ================= PAGE 4: bank-local workflow ================= */
 const WF_STAGES = [
-  ['Bank Transaction', 7], ['Local Model', 8], ['Risk Score', 8], ['Local Alert', 8], ['Local GenAI Report', 9], ['Bank Investigator', 8]];
-const WF_TOTAL = WF_STAGES.reduce((a, s) => a + s[1], 0) + 8;   // + stage 6 zoom-out to the regulator view
+  ['Bank Transaction', 7], ['Local Model', 8], ['Risk Score', 8], ['Local Alert', 8], ['Local GenAI Report', 8], ['Bank Investigator', 8]];
+const WF_TOTAL = WF_STAGES.reduce((a, s) => a + s[1], 0) + 7;   // + stage 6 zoom-out to the regulator view
 const wf = { bank: null, demos: {}, demo: null, stage: -1, elapsed: 0, running: false, h: null, last: 0, sar: {}, queue: {}, sel: null };
 (function buildNodes() {
   let g = ''; const w = 170, gap = 26, x0 = 28;
   WF_STAGES.forEach(([t], i) => {
     const x = x0 + i * (w + gap);
     g += `<g class="node" id="wf-n${i}"><rect class="box" x="${x}" y="196" width="${w}" height="92" rx="10"/>
-      <text class="n" x="${x + 14}" y="220">0${i + 1}</text>
+      <text class="n" x="${x + 14}" y="222">0${i + 1}</text>
       <text class="t" x="${x + w / 2}" y="252" text-anchor="middle">${t}</text>
-      <text x="${x + w / 2}" y="274" text-anchor="middle" font-size="11.5" fill="#525252" id="wf-s${i}"></text></g>`;
+      <text x="${x + w / 2}" y="277" text-anchor="middle" font-size="14" fill="#525252" id="wf-s${i}"></text></g>`;
     if (i < 5) g += `<path class="edge" id="wf-e${i}" d="M${x + w + 2} 242 L${x + w + gap - 2} 242" marker-end="url(#wa)"/>`;
   });
   $('wf-nodes').innerHTML = g;
@@ -1624,8 +1648,9 @@ async function wfLoad() {
   res.forEach(([b, d]) => { wf.demos[b] = d; });
   const avail = res.filter(([, d]) => d);
   // deterministic pick: a demo whose transaction is labelled laundering at the best rank; else the first available bank
-  const lab = avail.filter(([, d]) => d.label && d.label.is_laundering === 1).sort((a, b) => (a[1].rank ?? 1e9) - (b[1].rank ?? 1e9) || a[0] - b[0]);
-  const pick = lab[0] || avail.find(([b]) => b !== 1) || avail[0];
+  const lab = avail.filter(([, d]) => d.label && d.label.is_laundering === 1).sort((a, b) => (a[1].rank ?? 1e9) - (b[1].rank ?? 1e9) || (a[0] === 1 ? 9 : a[0]) - (b[0] === 1 ? 9 : b[0]));   // bank 1 last on ties: its laundering is not learnable per row
+  const agg = lastState && lastState.alerts_aggregate; const wb = agg && agg.walkthrough_bank != null ? +agg.walkthrough_bank : null;
+  const pick = (wb && wf.demos[wb] ? [wb, wf.demos[wb]] : null) || lab[0] || (wf.demos[4] ? [4, wf.demos[4]] : null) || avail.find(([b]) => b !== 1) || avail[0];
   $('wf-banks').innerHTML = [1, 2, 3, 4].map(b => `<button type="button" data-b="${b}" aria-pressed="false"${wf.demos[b] ? '' : ' title="no bank-local demo file for this bank"'}>Bank ${b}</button>`).join('');
   $('wf-banks').querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => wfSetBank(+btn.dataset.b)));
   wfSetBank(pick ? pick[0] : 2);
@@ -1661,7 +1686,7 @@ function wfStageRender(i) {
   const ind = feats.filter(f => f.contribution > 0).sort((a, b) => b.contribution - a.contribution).slice(0, 3);
   $('wf-s0').textContent = i >= 0 ? `${money(t.amt_paid, t.cur_paid)}`.slice(0, 26) : '';
   $('wf-s1').textContent = i >= 1 ? `${feats.length} features · round ${d.model && d.model.round != null ? d.model.round : '?'}` : '';
-  $('wf-s2').textContent = i >= 2 ? `score ${Number(d.score).toFixed(4)}` : '';
+  $('wf-s2').textContent = i >= 2 ? `score ${Number(d.score).toFixed(6)}` : '';
   $('wf-s3').textContent = i >= 3 ? (d.alerted ? `${d.alert_id} · ${d.priority || ''}` : 'no alert') : '';
   $('wf-s4').textContent = i >= 4 ? (d.sar ? (d.sar.engine === 'llm' ? 'LLM + code' : 'template') : 'no report') : '';
   $('wf-s5').textContent = i >= 5 ? 'human review' : '';
@@ -1674,17 +1699,20 @@ function wfStageRender(i) {
       <div class="note" style="margin:0 0 .5rem">Federated model ${esc(String((d.model && d.model.sha256) || '').slice(0, 8))}, round ${esc(d.model && d.model.round != null ? d.model.round : '?')} · largest contributions (weight × value)</div>
       <div class="contrib">${top.map(f => `<div class="row"><span title="${esc(f.name)}">${esc(f.meaning || f.name)}</span><span class="bar"><i class="${f.contribution >= 0 ? 'pos' : 'neg'}" data-w="${(50 * Math.abs(f.contribution) / maxC).toFixed(1)}"></i></span><span class="v">${f.contribution >= 0 ? '+' : ''}${Number(f.contribution).toFixed(2)}</span></div>`).join('')}</div>
       <div class="note">Red pushes toward an alert, teal away. ${feats.length} features in total.</div></div>`;
-  const pct = v => Math.max(0, Math.min(100, 100 * Number(v)));
+  const sc = Number(d.score), tv = thr.value != null ? Number(thr.value) : null;
+  const lo = (tv != null && Math.min(sc, tv) > 0.9) ? Math.max(0, Math.floor((Math.min(sc, tv) - 0.0005) * 1000) / 1000) : 0;   // zoom the scale when both sit near 1
+  const pct = v => Math.max(0, Math.min(100, 100 * (Number(v) - lo) / (1 - lo)));
   const scoreCard = `<div class="cardx">${head(3, 'Risk score vs the bank\'s threshold')}
-      <div class="bignum blue">${Number(d.score).toFixed(4)}</div>
-      <div class="gauge"><div class="trk"><div class="fil" data-w="${pct(d.score).toFixed(2)}"></div>${thr.value != null ? `<div class="thr" style="left:${pct(thr.value).toFixed(2)}%"><span>threshold ${Number(thr.value).toFixed(4)}</span></div>` : ''}</div></div>
-      <div class="note">${esc(thr.rule || '')}${d.score_note ? ' · ' + esc(d.score_note) : ''}</div></div>`;
+      <div class="bignum blue">${sc.toFixed(6)}</div><div class="note" style="margin:.1rem 0 .4rem">computed from the saved federated model: sigmoid(intercept + Σ weight × value)${d.logit != null ? ' · logit ' + Number(d.logit).toFixed(3) : ''}</div>
+      <div class="gauge"><div class="trk"><div class="fil" data-w="${pct(d.score).toFixed(2)}"></div>${thr.value != null ? `<div class="thr" style="left:${pct(thr.value).toFixed(2)}%"><span>threshold ${tv.toFixed(6)}</span></div>` : ''}</div></div>
+      <div class="note" style="display:flex;justify-content:space-between;margin-top:.2rem"><span>${lo.toFixed(3)}</span><span>${lo > 0 ? 'scale zoomed: both values are close to 1' : ''}</span><span>1.000</span></div>
+      <div class="note"><b>${d.alerted ? 'Above the threshold → alert' : 'Below the threshold → no alert'}</b> · ${esc(thr.rule || '')}</div></div>`;
   const rel = Array.isArray(d.related) ? d.related.slice(0, 6) : [];
   const alertCard = d.alerted ? `<div class="cardx">${head(4, 'Bank-local alert')}
-      <dl class="tx"><dt>alert</dt><dd>${esc(d.alert_id)} · rank ${esc(d.rank)} · priority ${esc(d.priority || '—')}</dd><dt>score</dt><dd>${Number(d.score).toFixed(4)}</dd>
+      <dl class="tx"><dt>alert</dt><dd>${esc(d.alert_id)} · rank ${esc(d.rank)} · priority ${esc(d.priority || '—')}</dd><dt>score</dt><dd>${Number(d.score).toFixed(6)}</dd>
       <dt>indicators</dt><dd style="font-family:var(--sans)">${ind.map(f => esc(f.meaning || f.name)).join('; ') || '—'}</dd>
       <dt>label</dt><dd style="font-family:var(--sans)">${d.label && d.label.is_laundering === 1 ? '<span class="tag plan">▲ labelled laundering in the synthetic data</span>' : '<span class="tag">not labelled</span>'}</dd></dl>
-      ${rel.length ? `<table class="rel"><tr><th>related same-bank payments</th><th>to</th><th>amount</th><th>format</th></tr>${rel.map(r => `<tr><td>${esc(r.ts ?? '')}</td><td>${esc(r.to_acct ?? '')}</td><td>${esc(money(r.amt_paid, r.cur_paid))}</td><td>${esc(r.fmt ?? '')}</td></tr>`).join('')}</table>` : ''}
+      ${rel.length ? `<table class="rel"><tr><th>related same-bank payments</th><th>role</th><th>to</th><th>amount</th><th>format</th></tr>${rel.map(r => `<tr><td>${esc(r.ts ?? '')}</td><td>${esc(r.role ?? '')}</td><td>${esc(r.to_acct ?? '')}</td><td>${esc(money(r.amt_paid, r.cur_paid))}</td><td>${esc(r.fmt ?? '')}${r.is_laundering === 1 ? ' ▲' : ''}</td></tr>`).join('')}</table>${rel.some(r => r.is_laundering === 1) ? '<div class="note">▲ = labelled laundering in the synthetic data</div>' : ''}` : ''}
       <div class="note">Ranked for analyst review, not a finding.</div></div>`
     : `<div class="cardx">${head(4, 'No alert')}<p>The score is below this bank's threshold, so no alert is raised. Correct non-alert.</p></div>`;
   const sarMeta = d.sar;
@@ -1727,7 +1755,7 @@ function wfStageAt(t) { let i = 0; for (let k = 0; k < WF_BOUNDS.length; k++) if
 function wfTick() {
   const now = performance.now(); wf.elapsed += (now - wf.last) / 1000; wf.last = now;
   if (wf.elapsed >= WF_TOTAL) { wf.elapsed = WF_TOTAL; wfPauseUi(false); wf.running = false; clearInterval(wf.h); wf.h = null; $('wf-run').textContent = '↺ Run again'; $('wf-pause').disabled = true; $('wf-skip').disabled = true; }
-  const i = wfStageAt(wf.elapsed); if (i !== wf.stage) wfStageRender(i);
+  const i = wfStageAt(wf.elapsed); if (i !== wf.stage) { wfStageRender(i); if (i === 6) setTimeout(() => $('wf-end').scrollIntoView({ block: 'end', behavior: REDUCED ? 'auto' : 'smooth' }), 300); }
   wfTimeline(); updateProgress();
 }
 function wfTimeline() {
