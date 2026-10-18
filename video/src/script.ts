@@ -51,7 +51,7 @@ export const SCENES: { id: SceneId; from: number; to: number; narration: string 
     from: s("1:06"),
     to: s("1:40"),
     narration:
-      "This is it running live on an IBM LinuxONE machine, s390x, in sandboxed containers. Four banks and a coordinator train together. The regulator's dashboard shows every update arriving, and zero transaction rows shared. Now a bank tries to send five raw rows: the door blocks it, and the regulator sees the attempt.",
+      "This is it running on an IBM LinuxONE machine, s390x, in sandboxed containers. Four banks and a coordinator train together. The regulator's dashboard logs every update, with zero transaction rows shared, and counts every blocked attempt to send raw rows. Inside each bank, alerts and reports stay local.",
   },
   {
     id: "results",
